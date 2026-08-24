@@ -48,10 +48,25 @@ test("ships End-User tracking and the clean quotation template", async () => {
   const worksheetPath = Object.keys(templateFiles).find((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
   assert.ok(worksheetPath);
   const worksheetXml = strFromU8(templateFiles[worksheetPath]);
-  assert.match(worksheetXml, /<x:mergeCell ref="B4:D4"\s*\/>/);
-  assert.match(worksheetXml, /<x:mergeCell ref="E4:F4"\s*\/>/);
-  assert.doesNotMatch(worksheetXml, /<x:mergeCell ref="B4:E4"\s*\/>/);
-  assert.match(worksheetXml, /<x:c r="E4"[^>]*>[\s\S]*?<x:v>QUOTATION NO\.<\/x:v>[\s\S]*?<\/x:c>/);
+  const stylesXml = strFromU8(templateFiles["xl/styles.xml"]);
+  assert.match(worksheetXml, /<x:mergeCell ref="B4:C4"\s*\/>/);
+  assert.match(worksheetXml, /<x:mergeCell ref="D4:F4"\s*\/>/);
+  assert.doesNotMatch(worksheetXml, /<x:mergeCell ref="B4:D4"\s*\/>/);
+  assert.match(worksheetXml, /<x:c r="D4"[^>]*>[\s\S]*?<x:v>QUOTATION NO\.<\/x:v>[\s\S]*?<\/x:c>/);
+
+  const styleFontSize = (cellReference) => {
+    const styleId = Number(worksheetXml.match(new RegExp(`<x:c\\b(?=[^>]*\\br="${cellReference}")[^>]*\\bs="(\\d+)"`))?.[1]);
+    const fontsXml = stylesXml.match(/<x:fonts\b[^>]*>([\s\S]*?)<\/x:fonts>/)?.[1] ?? "";
+    const cellXfsXml = stylesXml.match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/)?.[1] ?? "";
+    const fonts = fontsXml.match(/<x:font\b[^>]*>[\s\S]*?<\/x:font>/g) ?? [];
+    const cellXfs = cellXfsXml.match(/<x:xf\b[^>]*?(?:\/>|>[\s\S]*?<\/x:xf>)/g) ?? [];
+    const fontId = Number(cellXfs[styleId]?.match(/\bfontId="(\d+)"/)?.[1]);
+    return Number(fonts[fontId]?.match(/<x:sz\b[^>]*\bval="([^"]+)"/)?.[1]);
+  };
+  assert.equal(styleFontSize("B3"), 9);
+  assert.equal(styleFontSize("B4"), 8.5);
+  assert.equal(styleFontSize("B5"), 8.5);
+  assert.equal(styleFontSize("D4"), 10);
 });
 
 test("ships manual final pricing, inventory, and weekly reporting", async () => {
