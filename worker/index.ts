@@ -35,8 +35,17 @@ function unauthorized(): Response {
   });
 }
 
+function isPublicStaticAsset(request: Request): boolean {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  return new URL(request.url).pathname.startsWith("/_next/static/");
+}
+
 const worker = {
   async fetch(request: Request, env: Env, ctx: HandlerContext): Promise<Response> {
+    // Static build artifacts contain no CRM records or secrets. Keeping them
+    // outside Basic Auth lets the browser finish loading after the HTML login.
+    if (isPublicStaticAsset(request)) return handler.fetch(request, env, ctx);
+
     const username = env.CRM_AUTH_USERNAME?.trim() || "mai";
     const password = env.CRM_AUTH_PASSWORD;
     if (!password) {
