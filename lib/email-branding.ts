@@ -26,12 +26,23 @@ const bodyHtml = (value: string) => escapeHtml(stripKnownEmailSignature(value))
   .map((paragraph) => `<p style="margin:0 0 14px;">${paragraph.replace(/\n/g, "<br>")}</p>`)
   .join("");
 
-export const loriotEmailContent = (body: string) => {
+type BrandedInlineImage = {
+  contentId: string;
+  filename: string;
+  contentType: string;
+  contentBase64: string;
+};
+
+const imageGalleryHtml = (images: BrandedInlineImage[]) => images.length
+  ? `<div style="margin:18px 0 20px;">${images.map((image) => `<img src="cid:${escapeHtml(image.contentId)}" alt="${escapeHtml(image.filename)}" style="display:block;max-width:100%;width:auto;height:auto;margin:0 0 12px;border:0;border-radius:4px;">`).join("")}</div>`
+  : "";
+
+export const loriotEmailContent = (body: string, contentImages: BrandedInlineImage[] = []) => {
   const cleanBody = stripKnownEmailSignature(body);
   return {
     text: `${cleanBody}\n\n${LORIOT_SIGNATURE_TEXT}`,
-    html: `<div style="max-width:640px;color:#202938;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;">${bodyHtml(cleanBody)}<div style="margin-top:24px;color:#1d2736;"><div style="margin-bottom:8px;">Thanks and best regards,</div><div style="width:100%;max-width:520px;border-top:1px solid #b8bdc6;margin:0 0 10px;"></div><div style="font-weight:700;">Mai Trần Thành (Mr.)</div><div><strong>T:</strong> (+84) 964 72 72 33</div><div><strong>E:</strong> <a href="mailto:hn.sales3@loriot.com.vn" style="color:#1b43d8;text-decoration:none;">hn.sales3@loriot.com.vn</a></div><img src="cid:${LORIOT_LOGO_CONTENT_ID}" width="225" height="47" alt="Loriot Industrial" style="display:block;width:225px;height:auto;margin-top:14px;border:0;"></div></div>`,
-    inlineImages: [{
+    html: `<div style="max-width:640px;color:#202938;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;">${bodyHtml(cleanBody)}${imageGalleryHtml(contentImages)}<div style="margin-top:24px;color:#1d2736;"><div style="margin-bottom:8px;">Thanks and best regards,</div><div style="width:100%;max-width:520px;border-top:1px solid #b8bdc6;margin:0 0 10px;"></div><div style="font-weight:700;">Mai Trần Thành (Mr.)</div><div><strong>T:</strong> (+84) 964 72 72 33</div><div><strong>E:</strong> <a href="mailto:hn.sales3@loriot.com.vn" style="color:#1b43d8;text-decoration:none;">hn.sales3@loriot.com.vn</a></div><img src="cid:${LORIOT_LOGO_CONTENT_ID}" width="225" height="47" alt="Loriot Industrial" style="display:block;width:225px;height:auto;margin-top:14px;border:0;"></div></div>`,
+    inlineImages: [...contentImages, {
       contentId: LORIOT_LOGO_CONTENT_ID,
       filename: "loriot-logo.png",
       contentType: "image/png",

@@ -5,11 +5,20 @@ import {
   hasEmailCredentialKey,
   ImapClient,
   SmtpClient,
+  bytesToBase64,
   type EmailConnectionSettings,
   type SmtpSecurity,
 } from "@/lib/email-server";
 import type { EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
 import { loriotEmailContent, stripKnownEmailSignature } from "@/lib/email-branding";
+import {
+  emailFilesBucket,
+  findEmailAssets,
+  listEmailAssets,
+  MAX_EMAIL_ASSETS,
+  MAX_EMAIL_TOTAL_BYTES,
+  publicEmailAsset,
+} from "@/lib/email-assets";
 
 type Input = Record<string, unknown>;
 type EmailSettingsRow = EmailConnectionSettings & {
@@ -89,15 +98,16 @@ function publicSettings(row: EmailSettingsRow | null): EmailSettingsPublic {
 }
 
 async function loadEmailData(db: CrmDatabase) {
-  const [row, messages] = await Promise.all([
+  const [row, messages, assets] = await Promise.all([
     settingsRow(db),
     db.prepare(`SELECT id, lead_id AS leadId, direction, sender_email AS senderEmail,
       recipient_email AS recipientEmail, subject, body_text AS bodyText, status,
       provider_message_id AS providerMessageId, error_message AS errorMessage,
       sent_at AS sentAt, received_at AS receivedAt, created_at AS createdAt
       FROM email_messages ORDER BY created_at DESC LIMIT 120`).all<EmailMessageLog>(),
+    listEmailAssets(db),
   ]);
-  return { settings: publicSettings(row), messages: messages.results ?? [] };
+  return { settings: publicSettings(row), messages: messages.results ?? [], assets: assets.map(publicEmailAsset) };
 }
 
 async function requireConnection(db: CrmDatabase) {
@@ -209,6 +219,11 @@ async function sendLeadEmails(db: CrmDatabase, input: Input) {
   const uniqueIds = [...new Set(leadIds)].slice(0, 10);
   if (!uniqueIds.length) throw new Error("Vui lòng chọn ít nhất một Lead có email.");
   if (leadIds.length > 10) throw new Error("Mỗi lần chỉ gửi tối đa 10 Lead để bảo vệ uy tín email công ty.");
+  const assetIds = Array.isArray(input.assetIds)
+    ? input.assetIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  const uniqueAssetIds = [...new Set(assetIds)];
+  if (uniqueAssetIds.length > MAX_EMAIL_ASSETS) throw new Error(`Mỗi email chỉ được chọn tối đa ${MAX_EMAIL_ASSETS} tệp hoặc hình ảnh.`);
   const subjectTemplate = textValue(input, "subject").slice(0, 500);
   const bodyTemplate = textValue(input, "body").slice(0, 12_000);
   if (!subjectTemplate || !bodyTemplate) throw new Error("Vui lòng nhập tiêu đề và nội dung email.");
@@ -220,6 +235,27 @@ async function sendLeadEmails(db: CrmDatabase, input: Input) {
   const invalid = leads.filter((lead) => !validEmail(lead.email));
   if (invalid.length) throw new Error(`Có ${invalid.length} Lead chưa có địa chỉ email hợp lệ.`);
   if (leads.length !== uniqueIds.length) throw new Error("Một số Lead đã bị xóa hoặc không còn tồn tại.");
+
+  const assetRows = await findEmailAssets(db, uniqueAssetIds);
+  if (assetRows.length !== uniqueAssetIds.length) throw new Error("Một số tệp đã bị xóa khỏi kho email.");
+  const totalAssetBytes = assetRows.reduce((sum, asset) => sum + asset.sizeBytes, 0);
+  if (totalAssetBytes > MAX_EMAIL_TOTAL_BYTES) throw new Error("Tổng dung lượng tệp gửi kèm vượt quá 15 MB.");
+  const storedAssets = await Promise.all(assetRows.map(async (asset) => {
+    const object = await emailFilesBucket().get(asset.objectKey);
+    if (!object) throw new Error(`Không tìm thấy tệp ${asset.fileName} trong kho lưu trữ.`);
+    return { ...asset, contentBase64: bytesToBase64(new Uint8Array(await object.arrayBuffer())) };
+  }));
+  const contentImages = storedAssets.filter((asset) => asset.fileKind === "image").map((asset) => ({
+    contentId: `email-asset-${asset.id.toLowerCase()}`,
+    filename: asset.fileName,
+    contentType: asset.contentType,
+    contentBase64: asset.contentBase64,
+  }));
+  const attachments = storedAssets.filter((asset) => asset.fileKind !== "image").map((asset) => ({
+    filename: asset.fileName,
+    contentType: asset.contentType,
+    contentBase64: asset.contentBase64,
+  }));
 
   const { settings, password } = await requireConnection(db);
   const client = await SmtpClient.open(settings, password);
@@ -234,13 +270,14 @@ async function sendLeadEmails(db: CrmDatabase, input: Input) {
       const id = `EML-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
       const subject = personalize(subjectTemplate, lead);
       const body = personalize(bodyTemplate, lead);
-      const branded = loriotEmailContent(body);
+      const branded = loriotEmailContent(body, contentImages);
       try {
         const messageId = await client.send({
           to: lead.email,
           recipientName: lead.contactName || lead.companyName,
           subject,
           ...branded,
+          attachments,
         });
         await db.batch([
           db.prepare(`INSERT INTO email_messages (

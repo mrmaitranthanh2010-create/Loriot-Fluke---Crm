@@ -92,6 +92,15 @@ const CREATE_STATEMENTS = [
     default_body TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS email_assets (
+    id TEXT PRIMARY KEY,
+    object_key TEXT NOT NULL UNIQUE,
+    file_name TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    file_kind TEXT NOT NULL DEFAULT 'document',
+    created_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS email_messages (
     id TEXT PRIMARY KEY,
     lead_id TEXT NOT NULL REFERENCES prospecting_leads(id) ON DELETE CASCADE,
@@ -269,6 +278,7 @@ const CREATE_STATEMENTS = [
   "CREATE INDEX IF NOT EXISTS idx_prospecting_leads_email ON prospecting_leads(email)",
   "CREATE INDEX IF NOT EXISTS idx_email_messages_lead_created ON email_messages(lead_id, created_at)",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_id ON email_messages(provider_message_id)",
+  "CREATE INDEX IF NOT EXISTS idx_email_assets_created ON email_assets(created_at)",
   "CREATE INDEX IF NOT EXISTS idx_quotations_opportunity ON quotations(opportunity_id)",
   "CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id)",
   "CREATE INDEX IF NOT EXISTS idx_products_model ON products(normalized_model)",

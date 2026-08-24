@@ -91,6 +91,15 @@ export type EmailSettingsPublic = {
   updatedAt: string;
 };
 
+export type EmailAsset = {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  fileKind: "image" | "document";
+  createdAt: string;
+};
+
 export type EmailMessageLog = {
   id: string;
   leadId: string;

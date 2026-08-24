@@ -26,6 +26,11 @@ export type OutboundEmail = {
     contentType: string;
     contentBase64: string;
   }>;
+  attachments?: Array<{
+    filename: string;
+    contentType: string;
+    contentBase64: string;
+  }>;
 };
 
 export type IncomingEmailHeader = {
@@ -38,7 +43,7 @@ export type IncomingEmailHeader = {
 
 const encoder = new TextEncoder();
 
-const bytesToBase64 = (bytes: Uint8Array) => {
+export const bytesToBase64 = (bytes: Uint8Array) => {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
@@ -224,45 +229,77 @@ function mimeMessage(settings: EmailConnectionSettings, email: OutboundEmail) {
     "MIME-Version: 1.0",
     "X-Mailer: Loriot Fluke CRM",
   ];
-  if (!email.html) {
+  const attachments = email.attachments ?? [];
+  if (!email.html && attachments.length === 0) {
     headers.push("Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64");
     return { messageId, raw: `${headers.join("\r\n")}\r\n\r\n${wrapBase64(utf8Base64(text))}\r\n` };
   }
 
+  const mixedBoundary = `mixed_${crypto.randomUUID().replace(/-/g, "")}`;
   const relatedBoundary = `related_${crypto.randomUUID().replace(/-/g, "")}`;
   const alternativeBoundary = `alternative_${crypto.randomUUID().replace(/-/g, "")}`;
-  headers.push(`Content-Type: multipart/related; boundary="${relatedBoundary}"`);
-  const parts = [
-    `--${relatedBoundary}`,
-    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
-    "",
-    `--${alternativeBoundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    wrapBase64(utf8Base64(text)),
-    `--${alternativeBoundary}`,
-    "Content-Type: text/html; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    wrapBase64(utf8Base64(email.html)),
-    `--${alternativeBoundary}--`,
-  ];
-  for (const image of email.inlineImages ?? []) {
-    const contentId = headerText(image.contentId).replace(/[<>]/g, "");
-    const filename = headerText(image.filename).replace(/[";]/g, "_");
-    const contentType = /^[a-z]+\/[a-z0-9.+-]+$/i.test(image.contentType) ? image.contentType : "application/octet-stream";
+  headers.push(attachments.length
+    ? `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`
+    : `Content-Type: multipart/related; boundary="${relatedBoundary}"`);
+  const parts: string[] = [];
+
+  if (email.html) {
+    if (attachments.length) parts.push(`--${mixedBoundary}`, `Content-Type: multipart/related; boundary="${relatedBoundary}"`, "");
     parts.push(
       `--${relatedBoundary}`,
-      `Content-Type: ${contentType}; name="${filename}"`,
-      "Content-Transfer-Encoding: base64",
-      `Content-ID: <${contentId}>`,
-      `Content-Disposition: inline; filename="${filename}"`,
+      `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
       "",
-      wrapBase64(image.contentBase64.replace(/\s+/g, "")),
+      `--${alternativeBoundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrapBase64(utf8Base64(text)),
+      `--${alternativeBoundary}`,
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrapBase64(utf8Base64(email.html)),
+      `--${alternativeBoundary}--`,
+    );
+    for (const image of email.inlineImages ?? []) {
+      const contentId = headerText(image.contentId).replace(/[<>]/g, "");
+      const filename = headerText(image.filename).replace(/[";]/g, "_");
+      const contentType = /^[a-z]+\/[a-z0-9.+-]+$/i.test(image.contentType) ? image.contentType : "application/octet-stream";
+      parts.push(
+        `--${relatedBoundary}`,
+        `Content-Type: ${contentType}; name="${filename}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-ID: <${contentId}>`,
+        `Content-Disposition: inline; filename="${filename}"`,
+        "",
+        wrapBase64(image.contentBase64.replace(/\s+/g, "")),
+      );
+    }
+    parts.push(`--${relatedBoundary}--`);
+  } else {
+    parts.push(
+      `--${mixedBoundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrapBase64(utf8Base64(text)),
     );
   }
-  parts.push(`--${relatedBoundary}--`, "");
+
+  for (const attachment of attachments) {
+    const filename = headerText(attachment.filename).replace(/[";]/g, "_");
+    const contentType = /^[a-z]+\/[a-z0-9.+-]+$/i.test(attachment.contentType) ? attachment.contentType : "application/octet-stream";
+    parts.push(
+      `--${mixedBoundary}`,
+      `Content-Type: ${contentType}; name="${filename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${filename}"`,
+      "",
+      wrapBase64(attachment.contentBase64.replace(/\s+/g, "")),
+    );
+  }
+  if (attachments.length) parts.push(`--${mixedBoundary}--`);
+  parts.push("");
   return { messageId, raw: `${headers.join("\r\n")}\r\n\r\n${parts.join("\r\n")}` };
 }
 

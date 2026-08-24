@@ -76,6 +76,16 @@ export const emailSettings = sqliteTable("email_settings", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const emailAssets = sqliteTable("email_assets", {
+  id: text("id").primaryKey(),
+  objectKey: text("object_key").notNull().unique(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  fileKind: text("file_kind").notNull().default("document"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("idx_email_assets_created").on(table.createdAt)]);
+
 export const emailMessages = sqliteTable("email_messages", {
   id: text("id").primaryKey(),
   leadId: text("lead_id").notNull().references(() => prospectingLeads.id, { onDelete: "cascade" }),
