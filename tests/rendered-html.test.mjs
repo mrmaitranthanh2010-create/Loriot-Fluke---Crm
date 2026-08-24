@@ -387,7 +387,7 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
     readFile(new URL("../lib/email-server.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/email-branding.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
-    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../vite.config.ts", import.meta.url), "utf8"),
   ]);
   assert.match(panel, /Soạn email cho Lead/);
   assert.match(panel, /Mỗi Lead nhận một email riêng đã cá nhân hóa/);
@@ -424,8 +424,8 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
   assert.doesNotMatch(emailApi, /passwordCiphertext.*Response\.json/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS email_messages/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS email_assets/);
-  assert.match(workerConfig, /"binding": "EMAIL_FILES"/);
-  assert.match(workerConfig, /"bucket_name": "loriot-crm-email-files"/);
+  assert.match(workerConfig, /r2/);
+  assert.match(workerConfig, /bucket_name: "loriot-crm-email-files"/);
 });
 
 test("merges High-Touch updates and tracks accepted customer revenue", async () => {

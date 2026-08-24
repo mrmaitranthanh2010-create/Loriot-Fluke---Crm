@@ -11,11 +11,5 @@
   },
   "observability": {
     "enabled": true
-  },
-  "r2_buckets": [
-    {
-      "binding": "EMAIL_FILES",
-      "bucket_name": "loriot-crm-email-files"
-    }
-  ]
+  }
 }
