@@ -586,6 +586,12 @@ td > span { margin-top: 4px; color: #8a94a5; font-size: 8px; }
 .email-feedback.error { border: 1px solid #efc9cc; background: #fff2f3; color: #a92f36; }
 .email-settings-error { margin: 12px 0 0; font-size: 10px; }
 .email-settings-modal .form-field > small { margin-top: 4px; color: #7c8798; font-size: 8px; line-height: 1.4; }
+.email-signature-preview { padding: 12px 14px; border: 1px solid #e5dfd1; border-radius: 9px; background: #fffdf8; }
+.email-signature-preview > span, .email-signature-preview > strong, .email-signature-preview > small { display: block; }
+.email-signature-preview > span { color: #9b7b23; font-size: 7px; font-weight: 850; letter-spacing: .1em; }
+.email-signature-preview > strong { margin-top: 7px; color: #182337; font-size: 10px; }
+.email-signature-preview > small { margin-top: 3px; color: #687488; font-size: 8px; }
+.email-signature-logo { width: 150px; height: 32px; margin-top: 9px; background-position: left center; background-repeat: no-repeat; background-size: contain; }
 .email-history { overflow: hidden; margin-bottom: 12px; }
 .email-history > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e8ebf0; }
 .email-history > header span, .email-history > header strong { display: block; }.email-history > header span { color: #8a94a5; font-size: 7px; font-weight: 850; letter-spacing: .08em; }.email-history > header strong { margin-top: 4px; font-size: 10px; }.email-history > header small { color: #8792a2; font-size: 7px; }

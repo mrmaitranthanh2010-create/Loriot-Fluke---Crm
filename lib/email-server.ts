@@ -19,6 +19,13 @@ export type OutboundEmail = {
   recipientName: string;
   subject: string;
   text: string;
+  html?: string;
+  inlineImages?: Array<{
+    contentId: string;
+    filename: string;
+    contentType: string;
+    contentBase64: string;
+  }>;
 };
 
 export type IncomingEmailHeader = {
@@ -215,11 +222,48 @@ function mimeMessage(settings: EmailConnectionSettings, email: OutboundEmail) {
     `Date: ${new Date().toUTCString()}`,
     `Message-ID: ${messageId}`,
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
     "X-Mailer: Loriot Fluke CRM",
   ];
-  return { messageId, raw: `${headers.join("\r\n")}\r\n\r\n${wrapBase64(utf8Base64(text))}\r\n` };
+  if (!email.html) {
+    headers.push("Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64");
+    return { messageId, raw: `${headers.join("\r\n")}\r\n\r\n${wrapBase64(utf8Base64(text))}\r\n` };
+  }
+
+  const relatedBoundary = `related_${crypto.randomUUID().replace(/-/g, "")}`;
+  const alternativeBoundary = `alternative_${crypto.randomUUID().replace(/-/g, "")}`;
+  headers.push(`Content-Type: multipart/related; boundary="${relatedBoundary}"`);
+  const parts = [
+    `--${relatedBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
+    "",
+    `--${alternativeBoundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapBase64(utf8Base64(text)),
+    `--${alternativeBoundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapBase64(utf8Base64(email.html)),
+    `--${alternativeBoundary}--`,
+  ];
+  for (const image of email.inlineImages ?? []) {
+    const contentId = headerText(image.contentId).replace(/[<>]/g, "");
+    const filename = headerText(image.filename).replace(/[";]/g, "_");
+    const contentType = /^[a-z]+\/[a-z0-9.+-]+$/i.test(image.contentType) ? image.contentType : "application/octet-stream";
+    parts.push(
+      `--${relatedBoundary}`,
+      `Content-Type: ${contentType}; name="${filename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-ID: <${contentId}>`,
+      `Content-Disposition: inline; filename="${filename}"`,
+      "",
+      wrapBase64(image.contentBase64.replace(/\s+/g, "")),
+    );
+  }
+  parts.push(`--${relatedBoundary}--`, "");
+  return { messageId, raw: `${headers.join("\r\n")}\r\n\r\n${parts.join("\r\n")}` };
 }
 
 export class SmtpClient {

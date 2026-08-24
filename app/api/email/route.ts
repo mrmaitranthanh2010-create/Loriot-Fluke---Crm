@@ -9,6 +9,7 @@ import {
   type SmtpSecurity,
 } from "@/lib/email-server";
 import type { EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
+import { loriotEmailContent, stripKnownEmailSignature } from "@/lib/email-branding";
 
 type Input = Record<string, unknown>;
 type EmailSettingsRow = EmailConnectionSettings & {
@@ -27,11 +28,7 @@ Em là Mai Trần Thành, phụ trách sản phẩm Fluke tại Loriot Industria
 
 Em được biết {{companyName}} đang hoạt động trong lĩnh vực {{industry}}. Bên em cung cấp các giải pháp đo kiểm Fluke phục vụ bảo trì điện, kiểm tra an toàn, chất lượng điện năng, camera nhiệt và hiệu chuẩn công nghiệp.
 
-Nếu Anh/Chị đang phụ trách kỹ thuật, bảo trì hoặc mua sắm thiết bị đo, em rất mong có cơ hội trao đổi ngắn để tìm hiểu nhu cầu hiện tại của nhà máy.
-
-Trân trọng,
-Mai Trần Thành
-Loriot Industrial`;
+Nếu Anh/Chị đang phụ trách kỹ thuật, bảo trì hoặc mua sắm thiết bị đo, em rất mong có cơ hội trao đổi ngắn để tìm hiểu nhu cầu hiện tại của nhà máy.`;
 
 const defaultSettings = (): EmailSettingsPublic => ({
   fromEmail: "hn.sales3@loriot.com.vn",
@@ -85,7 +82,7 @@ function publicSettings(row: EmailSettingsRow | null): EmailSettingsPublic {
     imapHost: row.imapHost,
     imapPort: row.imapPort,
     defaultSubject: row.defaultSubject || DEFAULT_SUBJECT,
-    defaultBody: row.defaultBody || DEFAULT_BODY,
+    defaultBody: stripKnownEmailSignature(row.defaultBody || DEFAULT_BODY),
     configured: Boolean(row.passwordCiphertext && row.passwordIv && hasEmailCredentialKey()),
     updatedAt: row.updatedAt,
   };
@@ -198,7 +195,7 @@ async function sendTest(db: CrmDatabase) {
       to: settings.fromEmail,
       recipientName: settings.fromName,
       subject: "Kiểm tra kết nối Loriot CRM",
-      text: "Email này xác nhận Loriot CRM đã kết nối thành công với máy chủ gửi thư của anh.",
+      ...loriotEmailContent("Email này xác nhận Loriot CRM đã kết nối thành công với máy chủ gửi thư của anh."),
     });
   } finally {
     await client.close();
@@ -237,19 +234,20 @@ async function sendLeadEmails(db: CrmDatabase, input: Input) {
       const id = `EML-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
       const subject = personalize(subjectTemplate, lead);
       const body = personalize(bodyTemplate, lead);
+      const branded = loriotEmailContent(body);
       try {
         const messageId = await client.send({
           to: lead.email,
           recipientName: lead.contactName || lead.companyName,
           subject,
-          text: body,
+          ...branded,
         });
         await db.batch([
           db.prepare(`INSERT INTO email_messages (
             id, lead_id, direction, sender_email, recipient_email, subject, body_text, status,
             provider_message_id, error_message, sent_at, received_at, created_at
           ) VALUES (?, ?, 'outbound', ?, ?, ?, ?, 'Sent', ?, '', ?, '', ?)`)
-            .bind(id, lead.id, settings.fromEmail, lead.email, subject, body, messageId, now, now),
+            .bind(id, lead.id, settings.fromEmail, lead.email, subject, branded.text, messageId, now, now),
           db.prepare(`UPDATE prospecting_leads SET last_email_date = ?, email_subject = ?,
             status = CASE WHEN converted_opportunity_id <> '' THEN status ELSE 'Chờ phản hồi' END,
             next_follow_up_date = CASE WHEN converted_opportunity_id <> '' THEN next_follow_up_date ELSE ? END,

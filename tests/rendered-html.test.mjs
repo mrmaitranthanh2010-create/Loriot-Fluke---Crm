@@ -379,15 +379,17 @@ test("separates outbound leads and reports only selected follow-up history", asy
 });
 
 test("connects the company mailbox and records personalized Lead outreach", async () => {
-  const [panel, emailApi, emailServer, database] = await Promise.all([
+  const [panel, emailApi, emailServer, emailBranding, database] = await Promise.all([
     readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/email/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/email-server.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/email-branding.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
   ]);
   assert.match(panel, /Soạn email cho Lead/);
   assert.match(panel, /Mỗi Lead nhận một email riêng đã cá nhân hóa/);
   assert.match(panel, /Kiểm tra phản hồi/);
+  assert.match(panel, /CHỮ KÝ TỰ ĐỘNG/);
   assert.match(panel, /Vui lòng nhập mật khẩu email ở lần kết nối đầu tiên/);
   assert.match(panel, /email-settings-error/);
   assert.match(panel, /type="submit" className="primary-button"/);
@@ -396,6 +398,12 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
   assert.match(emailApi, /action === "syncReplies"/);
   assert.match(emailServer, /AES-GCM/);
   assert.match(emailServer, /secureTransport: settings\.smtpSecurity === "starttls"/);
+  assert.match(emailServer, /multipart\/related/);
+  assert.match(emailServer, /Content-ID: </);
+  assert.match(emailBranding, /Mai Trần Thành \(Mr\.\)/);
+  assert.match(emailBranding, /hn\.sales3@loriot\.com\.vn/);
+  assert.match(emailBranding, /loriot-logo\.png/);
+  assert.doesNotMatch(emailApi, /Trân trọng,\nMai Trần Thành\nLoriot Industrial/);
   assert.doesNotMatch(emailApi, /passwordCiphertext.*Response\.json/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS email_messages/);
 });
