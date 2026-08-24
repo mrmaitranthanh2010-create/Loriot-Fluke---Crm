@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `customer_code` text DEFAULT '' NOT NULL;

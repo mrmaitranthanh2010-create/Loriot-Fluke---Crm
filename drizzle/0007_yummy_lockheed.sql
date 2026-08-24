@@ -1,0 +1,1 @@
+CREATE INDEX `idx_accounts_customer_code` ON `accounts` (`customer_code`);
