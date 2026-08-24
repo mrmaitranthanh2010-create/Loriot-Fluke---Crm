@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
+import { strFromU8, unzipSync } from "fflate";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -30,10 +31,11 @@ test("server-renders the branded Loriot CRM loading shell", async () => {
 });
 
 test("ships End-User tracking and the clean quotation template", async () => {
-  const [client, schema, template] = await Promise.all([
+  const [client, schema, template, templateBytes] = await Promise.all([
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     stat(new URL("../public/quotation-template.xlsx", import.meta.url)),
+    readFile(new URL("../public/quotation-template.xlsx", import.meta.url)),
   ]);
   assert.match(client, /End-User cuối cùng/);
   assert.match(client, /Lưu & xuất Excel/);
@@ -41,6 +43,15 @@ test("ships End-User tracking and the clean quotation template", async () => {
   assert.match(schema, /endUserCompany/);
   assert.match(schema, /quotationItems/);
   assert.ok(template.size > 50_000);
+
+  const templateFiles = unzipSync(new Uint8Array(templateBytes));
+  const worksheetPath = Object.keys(templateFiles).find((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+  assert.ok(worksheetPath);
+  const worksheetXml = strFromU8(templateFiles[worksheetPath]);
+  assert.match(worksheetXml, /<x:mergeCell ref="B4:D4"\s*\/>/);
+  assert.match(worksheetXml, /<x:mergeCell ref="E4:F4"\s*\/>/);
+  assert.doesNotMatch(worksheetXml, /<x:mergeCell ref="B4:E4"\s*\/>/);
+  assert.match(worksheetXml, /<x:c r="E4"[^>]*>[\s\S]*?<x:v>QUOTATION NO\.<\/x:v>[\s\S]*?<\/x:c>/);
 });
 
 test("ships manual final pricing, inventory, and weekly reporting", async () => {
