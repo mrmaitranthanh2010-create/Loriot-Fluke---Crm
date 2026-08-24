@@ -265,6 +265,10 @@ test("protects the Cloudflare Worker and every CRM API behind a password", async
   assert.match(workerSource, /WWW-Authenticate/);
   assert.match(workerSource, /constantTimeEqual/);
   assert.match(workerSource, /isPublicStaticAsset/);
+  assert.match(
+    await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    /"run_worker_first"\s*:\s*\["\/\*",\s*"!\/_next\/static\/\*",\s*"!\/favicon\.svg"\]/,
+  );
   assert.match(workerSource, /\/_next\/static\//);
   assert.match(viteSource, /CRM_AUTH_USERNAME:\s*"mai"/);
 });
