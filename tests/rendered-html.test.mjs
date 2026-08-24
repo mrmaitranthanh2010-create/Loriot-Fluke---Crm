@@ -54,19 +54,23 @@ test("ships End-User tracking and the clean quotation template", async () => {
   assert.doesNotMatch(worksheetXml, /<x:mergeCell ref="B4:D4"\s*\/>/);
   assert.match(worksheetXml, /<x:c r="D4"[^>]*>[\s\S]*?<x:v>QUOTATION NO\.<\/x:v>[\s\S]*?<\/x:c>/);
 
-  const styleFontSize = (cellReference) => {
+  const styleFont = (cellReference) => {
     const styleId = Number(worksheetXml.match(new RegExp(`<x:c\\b(?=[^>]*\\br="${cellReference}")[^>]*\\bs="(\\d+)"`))?.[1]);
     const fontsXml = stylesXml.match(/<x:fonts\b[^>]*>([\s\S]*?)<\/x:fonts>/)?.[1] ?? "";
     const cellXfsXml = stylesXml.match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/)?.[1] ?? "";
     const fonts = fontsXml.match(/<x:font\b[^>]*>[\s\S]*?<\/x:font>/g) ?? [];
     const cellXfs = cellXfsXml.match(/<x:xf\b[^>]*?(?:\/>|>[\s\S]*?<\/x:xf>)/g) ?? [];
     const fontId = Number(cellXfs[styleId]?.match(/\bfontId="(\d+)"/)?.[1]);
-    return Number(fonts[fontId]?.match(/<x:sz\b[^>]*\bval="([^"]+)"/)?.[1]);
+    const fontXml = fonts[fontId] ?? "";
+    return {
+      size: Number(fontXml.match(/<x:sz\b[^>]*\bval="([^"]+)"/)?.[1]),
+      italic: /<x:i\b[^>]*\/>/.test(fontXml),
+    };
   };
-  assert.equal(styleFontSize("B3"), 9);
-  assert.equal(styleFontSize("B4"), 8.5);
-  assert.equal(styleFontSize("B5"), 8.5);
-  assert.equal(styleFontSize("D4"), 10);
+  assert.deepEqual(styleFont("B3"), { size: 9, italic: false });
+  assert.deepEqual(styleFont("B4"), { size: 8.5, italic: false });
+  assert.deepEqual(styleFont("B5"), { size: 8.5, italic: false });
+  assert.deepEqual(styleFont("D4"), { size: 10, italic: false });
 });
 
 test("ships manual final pricing, inventory, and weekly reporting", async () => {
