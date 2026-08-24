@@ -47,6 +47,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   const [feedback, setFeedback] = useState("");
   const [isError, setIsError] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -90,12 +91,31 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   const openSettings = () => {
     if (!data) return;
     setSettingsDraft({ ...data.settings, password: "" });
+    setSettingsError("");
     setSettingsOpen(true);
   };
 
   const saveSettings = async (event: FormEvent) => {
     event.preventDefault();
     if (!settingsDraft) return;
+    setSettingsError("");
+    if (!settingsDraft.fromEmail.trim() || !settingsDraft.fromName.trim() || !settingsDraft.username.trim()) {
+      setSettingsError("Vui lòng điền đầy đủ email gửi, tên người gửi và tên đăng nhập.");
+      return;
+    }
+    if (!settingsDraft.configured && !settingsDraft.password) {
+      setSettingsError("Vui lòng nhập mật khẩu email ở lần kết nối đầu tiên.");
+      return;
+    }
+    if (!settingsDraft.smtpHost.trim() || !settingsDraft.imapHost.trim()
+      || settingsDraft.smtpPort < 1 || settingsDraft.imapPort < 1) {
+      setSettingsError("Thông tin máy chủ email hoặc cổng kết nối chưa đầy đủ.");
+      return;
+    }
+    if (!settingsDraft.defaultSubject.trim() || !settingsDraft.defaultBody.trim()) {
+      setSettingsError("Vui lòng điền tiêu đề và nội dung email mặc định.");
+      return;
+    }
     setBusy(true);
     setFeedback("");
     try {
@@ -104,7 +124,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
       setSettingsOpen(false);
       showFeedback("Đã lưu tài khoản email an toàn trong CRM.");
     } catch (error) {
-      showFeedback(error instanceof Error ? error.message : "Không thể lưu tài khoản email.", true);
+      setSettingsError(error instanceof Error ? error.message : "Không thể lưu tài khoản email.");
     } finally {
       setBusy(false);
     }
@@ -201,19 +221,19 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     {settingsOpen && settingsDraft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
       <div className="modal email-settings-modal" role="dialog" aria-modal="true" aria-label="Cấu hình email công ty">
         <header className="modal-header"><div><span>KẾT NỐI MẮT BÃO</span><h2>Cấu hình email công ty</h2><p>Mật khẩu được mã hóa trước khi lưu và không bao giờ hiển thị lại.</p></div><button className="modal-close" onClick={() => setSettingsOpen(false)} aria-label="Đóng">×</button></header>
-        <form onSubmit={saveSettings} autoComplete="off"><div className="modal-body"><div className="form-grid">
+        <form onSubmit={saveSettings} autoComplete="off" noValidate><div className="modal-body"><div className="form-grid">
           <label className="form-field"><span>Email gửi</span><input type="email" required value={settingsDraft.fromEmail} onChange={(event) => setSettingsDraft({ ...settingsDraft, fromEmail: event.target.value })}/></label>
           <label className="form-field"><span>Tên người gửi</span><input required value={settingsDraft.fromName} onChange={(event) => setSettingsDraft({ ...settingsDraft, fromName: event.target.value })}/></label>
           <label className="form-field"><span>Tên đăng nhập</span><input type="email" required value={settingsDraft.username} onChange={(event) => setSettingsDraft({ ...settingsDraft, username: event.target.value })}/></label>
-          <label className="form-field"><span>Mật khẩu email</span><input type="password" value={settingsDraft.password} onChange={(event) => setSettingsDraft({ ...settingsDraft, password: event.target.value })} placeholder={settingsDraft.configured ? "Để trống nếu không đổi" : "Nhập mật khẩu hiện tại"}/></label>
+          <label className="form-field"><span>Mật khẩu email{!settingsDraft.configured && <b>*</b>}</span><input type="password" required={!settingsDraft.configured} autoComplete="new-password" value={settingsDraft.password} onChange={(event) => { setSettingsDraft({ ...settingsDraft, password: event.target.value }); setSettingsError(""); }} placeholder={settingsDraft.configured ? "Để trống nếu không đổi" : "Bắt buộc ở lần kết nối đầu tiên"}/><small>{settingsDraft.configured ? "Để trống nếu anh không muốn đổi mật khẩu." : "Nhập mật khẩu đang dùng trong Apple Mail/Roundcube."}</small></label>
           <label className="form-field"><span>Máy chủ gửi (SMTP)</span><input required value={settingsDraft.smtpHost} onChange={(event) => setSettingsDraft({ ...settingsDraft, smtpHost: event.target.value })}/></label>
           <label className="form-field"><span>Cổng / bảo mật SMTP</span><div className="email-port-row"><input type="number" required value={settingsDraft.smtpPort} onChange={(event) => setSettingsDraft({ ...settingsDraft, smtpPort: Number(event.target.value) })}/><select value={settingsDraft.smtpSecurity} onChange={(event) => setSettingsDraft({ ...settingsDraft, smtpSecurity: event.target.value as "ssl" | "starttls" })}><option value="ssl">SSL</option><option value="starttls">STARTTLS</option></select></div></label>
           <label className="form-field"><span>Máy chủ nhận (IMAP)</span><input required value={settingsDraft.imapHost} onChange={(event) => setSettingsDraft({ ...settingsDraft, imapHost: event.target.value })}/></label>
           <label className="form-field"><span>Cổng IMAP</span><input type="number" required value={settingsDraft.imapPort} onChange={(event) => setSettingsDraft({ ...settingsDraft, imapPort: Number(event.target.value) })}/></label>
           <label className="form-field field-wide"><span>Tiêu đề mặc định</span><input required value={settingsDraft.defaultSubject} onChange={(event) => setSettingsDraft({ ...settingsDraft, defaultSubject: event.target.value })}/></label>
           <label className="form-field field-wide"><span>Nội dung mặc định</span><textarea rows={10} required value={settingsDraft.defaultBody} onChange={(event) => setSettingsDraft({ ...settingsDraft, defaultBody: event.target.value })}/></label>
-        </div><p className="email-token-help">Có thể dùng: {"{{companyName}}"}, {"{{contactName}}"}, {"{{salutation}}"}, {"{{title}}"}, {"{{industry}}"}</p></div>
-        <footer className="modal-footer"><span>Cấu hình mặc định đã điền theo máy chủ pro43.emailserver.vn.</span><div><button type="button" className="secondary-button" onClick={() => setSettingsOpen(false)}>Hủy</button><button className="primary-button" disabled={busy}>{busy ? "Đang lưu..." : "Lưu cấu hình"}</button></div></footer></form>
+        </div><p className="email-token-help">Có thể dùng: {"{{companyName}}"}, {"{{contactName}}"}, {"{{salutation}}"}, {"{{title}}"}, {"{{industry}}"}</p>{settingsError && <div className="email-feedback error email-settings-error" role="alert">{settingsError}</div>}</div>
+        <footer className="modal-footer"><span>Cấu hình mặc định đã điền theo máy chủ pro43.emailserver.vn.</span><div><button type="button" className="secondary-button" onClick={() => setSettingsOpen(false)}>Hủy</button><button type="submit" className="primary-button" disabled={busy}>{busy ? "Đang lưu..." : "Lưu cấu hình"}</button></div></footer></form>
       </div>
     </div>}
 

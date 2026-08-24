@@ -388,6 +388,9 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
   assert.match(panel, /Soạn email cho Lead/);
   assert.match(panel, /Mỗi Lead nhận một email riêng đã cá nhân hóa/);
   assert.match(panel, /Kiểm tra phản hồi/);
+  assert.match(panel, /Vui lòng nhập mật khẩu email ở lần kết nối đầu tiên/);
+  assert.match(panel, /email-settings-error/);
+  assert.match(panel, /type="submit" className="primary-button"/);
   assert.match(emailApi, /slice\(0, 10\)/);
   assert.match(emailApi, /status = CASE WHEN converted_opportunity_id/);
   assert.match(emailApi, /action === "syncReplies"/);
