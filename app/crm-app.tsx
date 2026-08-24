@@ -1100,6 +1100,7 @@ export function CrmApp() {
           onSave={saveLead}
           onDelete={deleteLead}
           onConvert={convertLead}
+          onRefresh={load}
         />}
         {view === "actions" && <ActionCenter items={actionItems} onOpen={openEdit} onComplete={completeStep} saving={saving}/>} 
         {view === "pipeline" && <Pipeline opportunities={opportunities} onOpen={openEdit} onMove={moveStage} saving={saving}/>} 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { ACCOUNT_TYPES, LEAD_STATUSES, type Lead } from "@/lib/crm";
+import { EmailOutreachPanel } from "@/app/email-outreach-panel";
 
 export type LeadDraft = Omit<Lead, "createdAt" | "updatedAt" | "convertedOpportunityId" | "convertedAt">;
 
@@ -51,12 +52,13 @@ const shortDate = (value: string) => value
   ? new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T00:00:00`))
   : "—";
 
-export function LeadView({ leads, saving, onSave, onDelete, onConvert }: {
+export function LeadView({ leads, saving, onSave, onDelete, onConvert, onRefresh }: {
   leads: Lead[];
   saving: boolean;
   onSave: (lead: LeadDraft) => Promise<boolean>;
   onDelete: (lead: Lead) => Promise<void>;
   onConvert: (lead: Lead) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<LeadDraft>(emptyLead());
   const [open, setOpen] = useState(false);
@@ -85,6 +87,7 @@ export function LeadView({ leads, saving, onSave, onDelete, onConvert }: {
   return <>
     <div className="page-header"><div><span>LEAD & EMAIL OUTBOUND</span><h1>Lead tìm kiếm khách hàng</h1><p>Lưu danh sách gửi email riêng; chỉ Lead đủ tín hiệu mới được chuyển vào Pipeline và báo cáo.</p></div><button className="primary-button page-button" onClick={showCreate}>＋ Thêm Lead</button></div>
     <section className="lead-rule"><strong>Vùng làm việc riêng</strong><span>Email tìm kiếm hàng loạt không tự tạo cơ hội, không tạo báo giá và không xuất hiện trong báo cáo tuần.</span></section>
+    <EmailOutreachPanel leads={leads} onRefresh={onRefresh}/>
     <section className="lead-metrics">
       <article><span>Tổng Lead</span><strong>{leads.length}</strong><small>Danh sách đang lưu</small></article>
       <article><span>Cần Follow-up</span><strong>{due}</strong><small>Đến hạn hoặc quá hạn</small></article>

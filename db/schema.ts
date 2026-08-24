@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const accounts = sqliteTable("accounts", {
   id: text("id").primaryKey(),
@@ -57,6 +57,42 @@ export const prospectingLeads = sqliteTable("prospecting_leads", {
   index("idx_prospecting_leads_status").on(table.status),
   index("idx_prospecting_leads_follow_up").on(table.nextFollowUpDate),
   index("idx_prospecting_leads_email").on(table.email),
+]);
+
+export const emailSettings = sqliteTable("email_settings", {
+  id: text("id").primaryKey(),
+  fromEmail: text("from_email").notNull(),
+  fromName: text("from_name").notNull().default("Mai Trần Thành"),
+  username: text("username").notNull(),
+  smtpHost: text("smtp_host").notNull().default("pro43.emailserver.vn"),
+  smtpPort: integer("smtp_port").notNull().default(465),
+  smtpSecurity: text("smtp_security").notNull().default("ssl"),
+  imapHost: text("imap_host").notNull().default("pro43.emailserver.vn"),
+  imapPort: integer("imap_port").notNull().default(993),
+  passwordCiphertext: text("password_ciphertext").notNull().default(""),
+  passwordIv: text("password_iv").notNull().default(""),
+  defaultSubject: text("default_subject").notNull().default(""),
+  defaultBody: text("default_body").notNull().default(""),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const emailMessages = sqliteTable("email_messages", {
+  id: text("id").primaryKey(),
+  leadId: text("lead_id").notNull().references(() => prospectingLeads.id, { onDelete: "cascade" }),
+  direction: text("direction").notNull(),
+  senderEmail: text("sender_email").notNull().default(""),
+  recipientEmail: text("recipient_email").notNull().default(""),
+  subject: text("subject").notNull().default(""),
+  bodyText: text("body_text").notNull().default(""),
+  status: text("status").notNull().default("Queued"),
+  providerMessageId: text("provider_message_id").notNull().default(""),
+  errorMessage: text("error_message").notNull().default(""),
+  sentAt: text("sent_at").notNull().default(""),
+  receivedAt: text("received_at").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_email_messages_lead_created").on(table.leadId, table.createdAt),
+  uniqueIndex("idx_email_messages_provider_id").on(table.providerMessageId),
 ]);
 
 export const opportunities = sqliteTable("opportunities", {

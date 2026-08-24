@@ -378,6 +378,25 @@ test("separates outbound leads and reports only selected follow-up history", asy
   assert.match(operations, /const locked = report\.status === "Submitted"/);
 });
 
+test("connects the company mailbox and records personalized Lead outreach", async () => {
+  const [panel, emailApi, emailServer, database] = await Promise.all([
+    readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/email/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/email-server.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(panel, /Soạn email cho Lead/);
+  assert.match(panel, /Mỗi Lead nhận một email riêng đã cá nhân hóa/);
+  assert.match(panel, /Kiểm tra phản hồi/);
+  assert.match(emailApi, /slice\(0, 10\)/);
+  assert.match(emailApi, /status = CASE WHEN converted_opportunity_id/);
+  assert.match(emailApi, /action === "syncReplies"/);
+  assert.match(emailServer, /AES-GCM/);
+  assert.match(emailServer, /secureTransport: settings\.smtpSecurity === "starttls"/);
+  assert.doesNotMatch(emailApi, /passwordCiphertext.*Response\.json/);
+  assert.match(database, /CREATE TABLE IF NOT EXISTS email_messages/);
+});
+
 test("merges High-Touch updates and tracks accepted customer revenue", async () => {
   const [client, productsApi, database] = await Promise.all([
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),

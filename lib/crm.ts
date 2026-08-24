@@ -76,6 +76,37 @@ export type Lead = {
   updatedAt: string;
 };
 
+export type EmailSettingsPublic = {
+  fromEmail: string;
+  fromName: string;
+  username: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: "ssl" | "starttls";
+  imapHost: string;
+  imapPort: number;
+  defaultSubject: string;
+  defaultBody: string;
+  configured: boolean;
+  updatedAt: string;
+};
+
+export type EmailMessageLog = {
+  id: string;
+  leadId: string;
+  direction: "outbound" | "inbound";
+  senderEmail: string;
+  recipientEmail: string;
+  subject: string;
+  bodyText: string;
+  status: "Sent" | "Received" | "Failed";
+  providerMessageId: string;
+  errorMessage: string;
+  sentAt: string;
+  receivedAt: string;
+  createdAt: string;
+};
+
 export type Opportunity = {
   id: string;
   accountId: string;
