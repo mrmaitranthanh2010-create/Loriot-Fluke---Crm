@@ -13,6 +13,15 @@ const formatDate = (value: string) => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 };
 
+const englishMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const formatExpirationDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const monthName = englishMonthNames[Number(match[2]) - 1];
+  return monthName ? `${match[3]}-${monthName}-${match[1]}` : value;
+};
+
 const cellPattern = (reference: string) => new RegExp(
   `<x:c\\b(?=[^>]*\\br="${reference}")[^>]*/\\s*>|<x:c\\b(?=[^>]*\\br="${reference}")[^>]*>[\\s\\S]*?<\\/x:c>`,
 );
@@ -133,7 +142,7 @@ export function generateQuotationXlsx(template: Uint8Array, quotation: Quotation
     ["G4", quotation.quotationNo],
     ["G5", formatDate(quotation.quoteDate)],
     ["G6", quotation.customerId],
-    ["G7", formatDate(quotation.expirationDate)],
+    ["G7", formatExpirationDate(quotation.expirationDate)],
     ["B8", quotation.recipientCompany],
     ["B9", `ADD  : ${quotation.recipientAddress}`],
     ["B10", `ATTN : ${quotation.attention}`],

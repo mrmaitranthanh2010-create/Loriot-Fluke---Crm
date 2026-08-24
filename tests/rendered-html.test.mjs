@@ -31,9 +31,10 @@ test("server-renders the branded Loriot CRM loading shell", async () => {
 });
 
 test("ships End-User tracking and the clean quotation template", async () => {
-  const [client, schema, template, templateBytes] = await Promise.all([
+  const [client, schema, quotationExport, template, templateBytes] = await Promise.all([
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/quotation-xlsx.ts", import.meta.url), "utf8"),
     stat(new URL("../public/quotation-template.xlsx", import.meta.url)),
     readFile(new URL("../public/quotation-template.xlsx", import.meta.url)),
   ]);
@@ -42,6 +43,8 @@ test("ships End-User tracking and the clean quotation template", async () => {
   assert.match(client, /generateQuotationXlsx/);
   assert.match(schema, /endUserCompany/);
   assert.match(schema, /quotationItems/);
+  assert.match(quotationExport, /const englishMonthNames = \["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"\]/);
+  assert.match(quotationExport, /\["G7", formatExpirationDate\(quotation\.expirationDate\)\]/);
   assert.ok(template.size > 50_000);
 
   const templateFiles = unzipSync(new Uint8Array(templateBytes));
@@ -71,6 +74,13 @@ test("ships End-User tracking and the clean quotation template", async () => {
   assert.deepEqual(styleFont("B4"), { size: 8.5, italic: false });
   assert.deepEqual(styleFont("B5"), { size: 8.5, italic: false });
   assert.deepEqual(styleFont("D4"), { size: 10, italic: false });
+
+  const expirationStyleId = Number(worksheetXml.match(/<x:c\b(?=[^>]*\br="G7")[^>]*\bs="(\d+)"/)?.[1]);
+  const cellXfsXml = stylesXml.match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/)?.[1] ?? "";
+  const cellXfs = cellXfsXml.match(/<x:xf\b[^>]*?(?:\/>|>[\s\S]*?<\/x:xf>)/g) ?? [];
+  const expirationNumFmtId = cellXfs[expirationStyleId]?.match(/\bnumFmtId="(\d+)"/)?.[1];
+  const expirationNumberFormat = stylesXml.match(new RegExp(`<x:numFmt\\b(?=[^>]*\\bnumFmtId="${expirationNumFmtId}")[^>]*\\bformatCode="([^"]+)"`))?.[1];
+  assert.equal(expirationNumberFormat, "[$-409]dd\\-mmm\\-yyyy;@");
 });
 
 test("ships manual final pricing, inventory, and weekly reporting", async () => {
