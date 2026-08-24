@@ -14,6 +14,7 @@ const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_date: "2026-08-24",
   compatibility_flags: ["nodejs_compat"],
+  vars: { CRM_AUTH_USERNAME: "mai" },
   d1_databases: d1
     ? [
         {
