@@ -6,9 +6,14 @@ async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
+  const authorization = `Basic ${Buffer.from("mai:test-password").toString("base64")}`;
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    new Request("http://localhost/", { headers: { accept: "text/html", authorization } }),
+    {
+      ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+      CRM_AUTH_USERNAME: "mai",
+      CRM_AUTH_PASSWORD: "test-password",
+    },
     { waitUntil() {}, passThroughOnException() {} },
   );
 }
@@ -250,6 +255,16 @@ test("turns the notification bell into an urgent-work center", async () => {
   assert.match(client, /openEdit\(item\)/);
   assert.match(styles, /\.notification-panel/);
   assert.match(styles, /\.notification-item:hover/);
+});
+
+test("protects the Cloudflare Worker and every CRM API behind a password", async () => {
+  const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
+  const viteSource = await readFile(new URL("../vite.config.ts", import.meta.url), "utf8");
+
+  assert.match(workerSource, /CRM_AUTH_PASSWORD/);
+  assert.match(workerSource, /WWW-Authenticate/);
+  assert.match(workerSource, /constantTimeEqual/);
+  assert.match(viteSource, /CRM_AUTH_USERNAME:\s*"mai"/);
 });
 
 test("lays out the Monday-to-Friday plan vertically while preserving the Excel plan order", async () => {
