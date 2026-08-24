@@ -323,8 +323,8 @@ test("lays out the Monday-to-Friday plan vertically while preserving the Excel p
   ]);
   assert.match(operations, /weekly-day-number/);
   assert.match(operations, /Thứ tự này được giữ nguyên khi xuất Excel/);
-  assert.match(operations, /Hành động lấy từ CRM/);
-  assert.match(operations, /Activity hoàn thành trong tuần/);
+  assert.match(operations, /Quy tắc lấy dữ liệu/);
+  assert.match(operations, /includeInWeeklyReport/);
   assert.match(styles, /\.weekly-plan-grid \{ display: grid; grid-template-columns: 1fr/);
   assert.match(styles, /grid-template-columns: 150px minmax\(260px, 1\.25fr\) minmax\(300px, \.85fr\)/);
   assert.match(weeklyExport, /report\.plan\.slice\(0, 5\)\.forEach/);
@@ -345,8 +345,37 @@ test("links CRM product applications to quotations and weekly descriptions", asy
   assert.match(client, /application: line\.description/);
   assert.match(schema, /application: text\("application"\)/);
   assert.match(quotationExport, /Application: \$\{application\}/);
-  assert.match(operations, /Cập nhật hành động trong CRM/);
+  assert.match(operations, /Cập nhật Follow-up trong CRM/);
   assert.match(operations, /projectName: opportunity\.productApplication/);
+});
+
+test("separates outbound leads and reports only selected follow-up history", async () => {
+  const [client, leadView, followUp, operations, crmApi, database, schema] = await Promise.all([
+    readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lead-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/follow-up-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/operations-views.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/crm/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(client, /label: "Lead & Email"/);
+  assert.match(client, /fromLeadToOpportunity/);
+  assert.match(client, /sourceLeadId/);
+  assert.match(leadView, /Email tìm kiếm hàng loạt không tự tạo cơ hội/);
+  assert.match(leadView, /Chuyển cơ hội/);
+  assert.match(followUp, /Nhật ký Follow-up & Next Step/);
+  assert.match(followUp, /Đưa vào báo cáo tuần/);
+  assert.match(crmApi, /action === "saveLead"/);
+  assert.match(crmApi, /action === "saveActivity"/);
+  assert.match(crmApi, /converted_opportunity_id/);
+  assert.match(database, /prospecting_leads/);
+  assert.match(database, /include_in_weekly_report/);
+  assert.match(schema, /prospectingLeads/);
+  assert.match(operations, /activity\.includeInWeeklyReport/);
+  assert.doesNotMatch(operations, /opportunities\.filter\(\(item\) => item\.status === "Open"\)\.slice\(0, 6\)/);
+  assert.match(operations, /Mở lại chỉnh sửa/);
+  assert.match(operations, /const locked = report\.status === "Submitted"/);
 });
 
 test("merges High-Touch updates and tracks accepted customer revenue", async () => {

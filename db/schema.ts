@@ -31,6 +31,34 @@ export const contacts = sqliteTable("contacts", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const prospectingLeads = sqliteTable("prospecting_leads", {
+  id: text("id").primaryKey(),
+  companyName: text("company_name").notNull(),
+  website: text("website").notNull().default(""),
+  industry: text("industry").notNull().default(""),
+  accountType: text("account_type").notNull().default("End-User"),
+  contactName: text("contact_name").notNull().default(""),
+  title: text("title").notNull().default(""),
+  email: text("email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  source: text("source").notNull().default(""),
+  lastEmailDate: text("last_email_date").notNull().default(""),
+  status: text("status").notNull().default("Chưa gửi"),
+  nextFollowUpDate: text("next_follow_up_date").notNull().default(""),
+  emailSubject: text("email_subject").notNull().default(""),
+  replyNotes: text("reply_notes").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  owner: text("owner").notNull().default("Mai Trần Thành"),
+  convertedOpportunityId: text("converted_opportunity_id").notNull().default(""),
+  convertedAt: text("converted_at").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_prospecting_leads_status").on(table.status),
+  index("idx_prospecting_leads_follow_up").on(table.nextFollowUpDate),
+  index("idx_prospecting_leads_email").on(table.email),
+]);
+
 export const opportunities = sqliteTable("opportunities", {
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull().references(() => accounts.id),
@@ -193,5 +221,8 @@ export const activities = sqliteTable("activities", {
   nextStep: text("next_step").notNull().default(""),
   dueDate: text("due_date").notNull().default(""),
   owner: text("owner").notNull().default("Sales Fluke"),
+  status: text("status").notNull().default("Completed"),
+  includeInWeeklyReport: integer("include_in_weekly_report").notNull().default(0),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull().default(""),
 });

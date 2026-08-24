@@ -1,10 +1,12 @@
 import { ensureDatabase, ensureProductCatalog, type CrmDatabase } from "@/db";
 import {
   enrichOpportunity,
+  LEAD_STATUSES,
   STAGES,
   type Account,
   type Activity,
   type Contact,
+  type Lead,
   type Opportunity,
   type Quotation,
   type QuotationItem,
@@ -24,6 +26,14 @@ const textValue = (input: Input, key: string, fallback = "") => {
 const numberValue = (input: Input, key: string, fallback = 0) => {
   const value = Number(input[key]);
   return Number.isFinite(value) ? value : fallback;
+};
+
+const booleanValue = (input: Input, key: string, fallback = false) => {
+  const value = input[key];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+  return fallback;
 };
 
 const normalizeCustomerCode = (value: string) => value
@@ -120,14 +130,21 @@ async function backfillLegacyQuotationItems(db: CrmDatabase) {
 async function loadData() {
   const db = await ensureProductCatalog();
   await backfillLegacyQuotationItems(db);
-  const [opportunityResult, accountResult, contactResult, activityResult, quotationResult, itemResult] = await Promise.all([
+  const [leadResult, opportunityResult, accountResult, contactResult, activityResult, quotationResult, itemResult] = await Promise.all([
+    db.prepare(`SELECT id, company_name AS companyName, website, industry, account_type AS accountType,
+      contact_name AS contactName, title, email, phone, source, last_email_date AS lastEmailDate, status,
+      next_follow_up_date AS nextFollowUpDate, email_subject AS emailSubject, reply_notes AS replyNotes,
+      notes, owner, converted_opportunity_id AS convertedOpportunityId, converted_at AS convertedAt,
+      created_at AS createdAt, updated_at AS updatedAt
+      FROM prospecting_leads ORDER BY updated_at DESC`).all<Lead>(),
     db.prepare(selectOpportunities).all<OpportunityRow>(),
     db.prepare(`SELECT id, customer_code AS customerCode, company_name AS companyName, account_type AS accountType, industry, region, website, owner, notes
       FROM accounts ORDER BY company_name`).all<Account>(),
     db.prepare(`SELECT id, account_id AS accountId, full_name AS fullName, title, department, buying_role AS buyingRole,
       phone, email, zalo, preferred_channel AS preferredChannel FROM contacts ORDER BY full_name`).all<Contact>(),
     db.prepare(`SELECT id, opportunity_id AS opportunityId, activity_date AS activityDate, activity_type AS activityType,
-      contact_name AS contactName, summary, outcome, next_step AS nextStep, due_date AS dueDate, owner
+      contact_name AS contactName, summary, outcome, next_step AS nextStep, due_date AS dueDate, owner, status,
+      include_in_weekly_report AS includeInWeeklyReport, created_at AS createdAt, updated_at AS updatedAt
       FROM activities ORDER BY activity_date DESC, created_at DESC`).all<Activity>(),
     db.prepare(`SELECT id, opportunity_id AS opportunityId, quotation_no AS quotationNo, quote_date AS quoteDate,
       expiration_date AS expirationDate, customer_id AS customerId, recipient_company AS recipientCompany,
@@ -144,10 +161,14 @@ async function loadData() {
 
   const allItems = itemResult.results ?? [];
   return {
+    leads: leadResult.results ?? [],
     opportunities: (opportunityResult.results ?? []).map((row) => enrichOpportunity(row)),
     accounts: accountResult.results ?? [],
     contacts: contactResult.results ?? [],
-    activities: activityResult.results ?? [],
+    activities: (activityResult.results ?? []).map((activity) => ({
+      ...activity,
+      includeInWeeklyReport: Boolean(activity.includeInWeeklyReport),
+    })),
     quotations: (quotationResult.results ?? []).map((quotation) => ({
       ...quotation,
       items: allItems.filter((item) => item.quotationId === quotation.id),
@@ -164,6 +185,104 @@ export async function GET() {
   }
 }
 
+async function saveLead(input: Input) {
+  const db = await ensureDatabase();
+  const now = new Date().toISOString();
+  const currentId = textValue(input, "id");
+  const companyName = textValue(input, "companyName");
+  const email = textValue(input, "email").toLowerCase();
+  const rawStatus = textValue(input, "status", "Chưa gửi");
+  const status = LEAD_STATUSES.includes(rawStatus as (typeof LEAD_STATUSES)[number]) ? rawStatus : "Chưa gửi";
+  if (!companyName) throw new Error("Vui lòng nhập tên công ty của Lead.");
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Địa chỉ email của Lead chưa hợp lệ.");
+
+  const values = [
+    companyName, textValue(input, "website"), textValue(input, "industry"),
+    textValue(input, "accountType", "End-User"), textValue(input, "contactName"), textValue(input, "title"),
+    email, textValue(input, "phone"), textValue(input, "source"), textValue(input, "lastEmailDate"), status,
+    textValue(input, "nextFollowUpDate"), textValue(input, "emailSubject"), textValue(input, "replyNotes"),
+    textValue(input, "notes"), textValue(input, "owner", "Mai Trần Thành"),
+  ];
+  if (currentId) {
+    const current = await db.prepare("SELECT id, converted_opportunity_id AS convertedOpportunityId FROM prospecting_leads WHERE id = ?")
+      .bind(currentId).first<{ id: string; convertedOpportunityId: string }>();
+    if (!current) throw new Error("Không tìm thấy Lead cần cập nhật.");
+    const effectiveStatus = current.convertedOpportunityId ? "Đã chuyển cơ hội" : status;
+    values[10] = effectiveStatus;
+    await db.prepare(`UPDATE prospecting_leads SET company_name = ?, website = ?, industry = ?, account_type = ?,
+      contact_name = ?, title = ?, email = ?, phone = ?, source = ?, last_email_date = ?, status = ?,
+      next_follow_up_date = ?, email_subject = ?, reply_notes = ?, notes = ?, owner = ?, updated_at = ? WHERE id = ?`)
+      .bind(...values, now, currentId).run();
+    return;
+  }
+  const id = `LED-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  await db.prepare(`INSERT INTO prospecting_leads (
+    id, company_name, website, industry, account_type, contact_name, title, email, phone, source,
+    last_email_date, status, next_follow_up_date, email_subject, reply_notes, notes, owner,
+    converted_opportunity_id, converted_at, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)`)
+    .bind(id, ...values, now, now).run();
+}
+
+async function deleteLead(input: Input) {
+  const db = await ensureDatabase();
+  const id = textValue(input, "id");
+  if (!id) throw new Error("Thiếu mã Lead.");
+  const current = await db.prepare("SELECT id FROM prospecting_leads WHERE id = ?").bind(id).first<{ id: string }>();
+  if (!current) throw new Error("Không tìm thấy Lead cần xóa.");
+  await db.prepare("DELETE FROM prospecting_leads WHERE id = ?").bind(id).run();
+}
+
+async function saveActivity(input: Input) {
+  const db = await ensureDatabase();
+  const currentId = textValue(input, "id");
+  const opportunityId = textValue(input, "opportunityId");
+  const activityDate = textValue(input, "activityDate", new Date().toISOString().slice(0, 10));
+  const summary = textValue(input, "summary");
+  const rawStatus = textValue(input, "status", "Completed");
+  const status = ["Pending", "Completed", "Cancelled"].includes(rawStatus) ? rawStatus : "Completed";
+  if (!opportunityId || !summary) throw new Error("Vui lòng nhập cơ hội và nội dung Follow-up.");
+  const opportunity = await db.prepare("SELECT id FROM opportunities WHERE id = ?")
+    .bind(opportunityId).first<{ id: string }>();
+  if (!opportunity) throw new Error("Không tìm thấy cơ hội để lưu Follow-up.");
+  const now = new Date().toISOString();
+  const values = [
+    activityDate, textValue(input, "activityType", "Email"), textValue(input, "contactName"), summary,
+    textValue(input, "outcome"), textValue(input, "nextStep"), textValue(input, "dueDate"),
+    textValue(input, "owner", "Mai Trần Thành"), status, booleanValue(input, "includeInWeeklyReport") ? 1 : 0,
+  ];
+  if (currentId) {
+    const current = await db.prepare("SELECT id FROM activities WHERE id = ? AND opportunity_id = ?")
+      .bind(currentId, opportunityId).first<{ id: string }>();
+    if (!current) throw new Error("Không tìm thấy dòng Follow-up cần cập nhật.");
+    await db.prepare(`UPDATE activities SET activity_date = ?, activity_type = ?, contact_name = ?, summary = ?,
+      outcome = ?, next_step = ?, due_date = ?, owner = ?, status = ?, include_in_weekly_report = ?,
+      updated_at = ? WHERE id = ?`).bind(...values, now, currentId).run();
+    return;
+  }
+  const id = `ACT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const statements = [db.prepare(`INSERT INTO activities (
+    id, opportunity_id, activity_date, activity_type, contact_name, summary, outcome, next_step, due_date,
+    owner, status, include_in_weekly_report, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, opportunityId, ...values, now, now)];
+  const nextStep = textValue(input, "nextStep");
+  const dueDate = textValue(input, "dueDate");
+  statements.push(db.prepare(`UPDATE opportunities SET last_contact_date = ?, next_step = CASE WHEN ? <> '' THEN ? ELSE next_step END,
+    next_step_due = CASE WHEN ? <> '' THEN ? ELSE next_step_due END, updated_at = ? WHERE id = ?`)
+    .bind(activityDate, nextStep, nextStep, dueDate, dueDate, now, opportunityId));
+  await db.batch(statements);
+}
+
+async function deleteActivity(input: Input) {
+  const db = await ensureDatabase();
+  const id = textValue(input, "id");
+  if (!id) throw new Error("Thiếu mã Follow-up.");
+  const current = await db.prepare("SELECT id FROM activities WHERE id = ?").bind(id).first<{ id: string }>();
+  if (!current) throw new Error("Không tìm thấy dòng Follow-up cần xóa.");
+  await db.prepare("DELETE FROM activities WHERE id = ?").bind(id).run();
+}
+
 async function createOpportunity(input: Input) {
   const db = await ensureDatabase();
   const now = new Date().toISOString();
@@ -174,6 +293,7 @@ async function createOpportunity(input: Input) {
   const companyName = textValue(input, "companyName");
   const contactName = textValue(input, "contactName");
   const productApplication = textValue(input, "productApplication");
+  const sourceLeadId = textValue(input, "sourceLeadId");
 
   if (!customerCode || !companyName || !contactName || !productApplication) {
     throw new Error("Vui lòng nhập mã khách hàng, công ty, người liên hệ và sản phẩm/ứng dụng.");
@@ -238,7 +358,15 @@ async function createOpportunity(input: Input) {
       now, now, now,
     );
 
-  await db.batch([accountStatement, contactStatement, opportunityStatement]);
+  const statements = [accountStatement, contactStatement, opportunityStatement];
+  if (sourceLeadId) {
+    const sourceLead = await db.prepare("SELECT id FROM prospecting_leads WHERE id = ?")
+      .bind(sourceLeadId).first<{ id: string }>();
+    if (!sourceLead) throw new Error("Không tìm thấy Lead nguồn để chuyển thành cơ hội.");
+    statements.push(db.prepare(`UPDATE prospecting_leads SET status = 'Đã chuyển cơ hội', converted_opportunity_id = ?,
+      converted_at = ?, updated_at = ? WHERE id = ?`).bind(opportunityId, now, now, sourceLeadId));
+  }
+  await db.batch(statements);
 }
 
 async function updateOpportunity(input: Input) {
@@ -348,10 +476,11 @@ async function completeNextStep(input: Input) {
 
   const activityId = `ACT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   const activityStatement = db.prepare(`INSERT INTO activities (
-      id, opportunity_id, activity_date, activity_type, contact_name, summary, outcome, next_step, due_date, owner, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)`).bind(
+      id, opportunity_id, activity_date, activity_type, contact_name, summary, outcome, next_step, due_date, owner,
+      status, include_in_weekly_report, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, 'Completed', 0, ?, ?)`).bind(
       activityId, id, today, "Follow-up", current.contactName, current.nextStep || "Follow-up cơ hội",
-      "Đã hoàn thành", current.owner, now.toISOString(),
+      "Đã hoàn thành", current.owner, now.toISOString(), now.toISOString(),
     );
   const opportunityStatement = db.prepare(`UPDATE opportunities SET last_contact_date = ?, next_step = '', next_step_due = '', updated_at = ? WHERE id = ?`)
     .bind(today, now.toISOString(), id);
@@ -605,7 +734,11 @@ export async function POST(request: Request) {
     const input = (await request.json()) as Input;
     const action = textValue(input, "action");
     let importSummary: { inserted: number; updated: number; total: number } | undefined;
-    if (action === "create") await createOpportunity(input);
+    if (action === "saveLead") await saveLead(input);
+    else if (action === "deleteLead") await deleteLead(input);
+    else if (action === "saveActivity") await saveActivity(input);
+    else if (action === "deleteActivity") await deleteActivity(input);
+    else if (action === "create") await createOpportunity(input);
     else if (action === "update") await updateOpportunity(input);
     else if (action === "deleteOpportunity") await deleteOpportunity(input);
     else if (action === "moveStage") await moveStage(input);

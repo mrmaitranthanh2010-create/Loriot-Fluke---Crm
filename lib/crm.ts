@@ -19,6 +19,16 @@ export const ACCOUNT_TYPES = [
   "Existing Customer",
 ] as const;
 
+export const LEAD_STATUSES = [
+  "Chưa gửi",
+  "Đã gửi",
+  "Chờ phản hồi",
+  "Có phản hồi",
+  "Không quan tâm",
+  "Email lỗi",
+  "Đã chuyển cơ hội",
+] as const;
+
 export const BUYING_ROLES = [
   "Decision Maker",
   "Technical Influencer",
@@ -40,6 +50,31 @@ export const SCORE_FIELDS = [
 
 export type StageName = (typeof STAGES)[number]["name"];
 export type Temperature = "Hot" | "Warm" | "Cold";
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+export type Lead = {
+  id: string;
+  companyName: string;
+  website: string;
+  industry: string;
+  accountType: string;
+  contactName: string;
+  title: string;
+  email: string;
+  phone: string;
+  source: string;
+  lastEmailDate: string;
+  status: LeadStatus;
+  nextFollowUpDate: string;
+  emailSubject: string;
+  replyNotes: string;
+  notes: string;
+  owner: string;
+  convertedOpportunityId: string;
+  convertedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type Opportunity = {
   id: string;
@@ -132,6 +167,10 @@ export type Activity = {
   nextStep: string;
   dueDate: string;
   owner: string;
+  status: "Pending" | "Completed" | "Cancelled";
+  includeInWeeklyReport: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type QuotationItem = {
@@ -204,6 +243,7 @@ export type Quotation = {
 };
 
 export type CrmData = {
+  leads: Lead[];
   opportunities: Opportunity[];
   accounts: Account[];
   contacts: Contact[];

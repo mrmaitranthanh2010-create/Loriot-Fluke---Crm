@@ -53,6 +53,29 @@ const CREATE_STATEMENTS = [
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS prospecting_leads (
+    id TEXT PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    website TEXT NOT NULL DEFAULT '',
+    industry TEXT NOT NULL DEFAULT '',
+    account_type TEXT NOT NULL DEFAULT 'End-User',
+    contact_name TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    last_email_date TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'Chưa gửi',
+    next_follow_up_date TEXT NOT NULL DEFAULT '',
+    email_subject TEXT NOT NULL DEFAULT '',
+    reply_notes TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    owner TEXT NOT NULL DEFAULT 'Mai Trần Thành',
+    converted_opportunity_id TEXT NOT NULL DEFAULT '',
+    converted_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS opportunities (
     id TEXT PRIMARY KEY,
     account_id TEXT NOT NULL REFERENCES accounts(id),
@@ -101,7 +124,10 @@ const CREATE_STATEMENTS = [
     next_step TEXT NOT NULL DEFAULT '',
     due_date TEXT NOT NULL DEFAULT '',
     owner TEXT NOT NULL DEFAULT 'Sales Fluke',
-    created_at TEXT NOT NULL
+    status TEXT NOT NULL DEFAULT 'Completed',
+    include_in_weekly_report INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE TABLE IF NOT EXISTS quotations (
     id TEXT PRIMARY KEY,
@@ -207,6 +233,9 @@ const CREATE_STATEMENTS = [
   "CREATE INDEX IF NOT EXISTS idx_opportunities_stage ON opportunities(stage)",
   "CREATE INDEX IF NOT EXISTS idx_opportunities_next_step_due ON opportunities(next_step_due)",
   "CREATE INDEX IF NOT EXISTS idx_activities_opportunity ON activities(opportunity_id)",
+  "CREATE INDEX IF NOT EXISTS idx_prospecting_leads_status ON prospecting_leads(status)",
+  "CREATE INDEX IF NOT EXISTS idx_prospecting_leads_follow_up ON prospecting_leads(next_follow_up_date)",
+  "CREATE INDEX IF NOT EXISTS idx_prospecting_leads_email ON prospecting_leads(email)",
   "CREATE INDEX IF NOT EXISTS idx_quotations_opportunity ON quotations(opportunity_id)",
   "CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id)",
   "CREATE INDEX IF NOT EXISTS idx_products_model ON products(normalized_model)",
@@ -229,6 +258,12 @@ const OPPORTUNITY_COLUMNS = [
   ["end_user_phone", "TEXT NOT NULL DEFAULT ''"],
   ["end_user_email", "TEXT NOT NULL DEFAULT ''"],
   ["end_user_notes", "TEXT NOT NULL DEFAULT ''"],
+] as const;
+
+const ACTIVITY_COLUMNS = [
+  ["status", "TEXT NOT NULL DEFAULT 'Completed'"],
+  ["include_in_weekly_report", "INTEGER NOT NULL DEFAULT 0"],
+  ["updated_at", "TEXT NOT NULL DEFAULT ''"],
 ] as const;
 
 const QUOTATION_ITEM_COLUMNS = [
@@ -318,7 +353,21 @@ async function initializeDatabase() {
     }
   }
 
+  const activityColumnResult = await db.prepare("PRAGMA table_info(activities)").all<{ name: string }>();
+  const existingActivityColumns = new Set((activityColumnResult.results ?? []).map((column) => column.name));
+  for (const [name, definition] of ACTIVITY_COLUMNS) {
+    if (!existingActivityColumns.has(name)) {
+      try {
+        await db.prepare(`ALTER TABLE activities ADD COLUMN ${name} ${definition}`).run();
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+  }
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_activities_weekly_report ON activities(include_in_weekly_report, activity_date)").run();
+
   const now = new Date().toISOString();
+  await db.prepare("UPDATE activities SET updated_at = created_at WHERE updated_at = ''").run();
   await db.batch([
     db.prepare(`DELETE FROM quotation_items WHERE quotation_id IN (
       SELECT id FROM quotations WHERE opportunity_id LIKE 'DEMO-%'

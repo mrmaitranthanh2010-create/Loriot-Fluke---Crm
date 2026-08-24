@@ -8,14 +8,18 @@ import {
   calculateScore,
   getTemperature,
   type Account,
+  type Activity,
   type Contact,
   type CrmData,
+  type Lead,
   type Opportunity,
   type Product,
   type Quotation,
   type QuotationItem,
   type StageName,
 } from "@/lib/crm";
+import { LeadView, type LeadDraft } from "@/app/lead-view";
+import { FollowUpPanel, type ActivityDraft } from "@/app/follow-up-panel";
 import { generateQuotationXlsx } from "@/lib/quotation-xlsx";
 import { InventoryView, WeeklyReportsView } from "@/app/operations-views";
 import { parseHighTouchXlsx, parsePriceListXlsx, parseQuotationWorkbookXlsx } from "@/lib/product-xlsx";
@@ -26,11 +30,12 @@ import {
   type PricingSettingsInput,
 } from "@/lib/pricing";
 
-type View = "dashboard" | "actions" | "pipeline" | "records" | "quotations" | "sales" | "products" | "inventory" | "weekly";
+type View = "dashboard" | "leads" | "actions" | "pipeline" | "records" | "quotations" | "sales" | "products" | "inventory" | "weekly";
 type IconName = "grid" | "check" | "pipeline" | "users" | "file" | "box" | "upload" | "download" | "trash" | "plus" | "search" | "bell" | "money" | "target" | "fire" | "clock" | "arrow" | "edit" | "close" | "building" | "person" | "briefcase" | "chevron" | "refresh" | "phone" | "mail";
 
 type Draft = {
   id: string;
+  sourceLeadId: string;
   customerCode: string;
   companyName: string;
   accountType: string;
@@ -257,6 +262,7 @@ const emptyProduct = (): ProductDraft => ({
 
 const emptyDraft = (): Draft => ({
   id: "",
+  sourceLeadId: "",
   customerCode: "",
   companyName: "",
   accountType: "End-User",
@@ -304,6 +310,7 @@ const emptyDraft = (): Draft => ({
 
 const fromOpportunity = (opportunity: Opportunity): Draft => ({
   id: opportunity.id,
+  sourceLeadId: "",
   customerCode: opportunity.customerCode,
   companyName: opportunity.companyName,
   accountType: opportunity.accountType,
@@ -347,6 +354,25 @@ const fromOpportunity = (opportunity: Opportunity): Draft => ({
   endUserPhone: opportunity.endUserPhone,
   endUserEmail: opportunity.endUserEmail,
   endUserNotes: opportunity.endUserNotes,
+});
+
+const fromLeadToOpportunity = (lead: Lead): Draft => ({
+  ...emptyDraft(),
+  sourceLeadId: lead.id,
+  companyName: lead.companyName,
+  accountType: lead.accountType || "End-User",
+  industry: lead.industry,
+  website: lead.website,
+  contactName: lead.contactName,
+  title: lead.title,
+  phone: lead.phone,
+  email: lead.email,
+  preferredChannel: "Email",
+  stage: lead.status === "Có phản hồi" ? "Qualified" : "Contacted",
+  lastContactDate: lead.lastEmailDate || new Date().toISOString().slice(0, 10),
+  nextStep: "Xác minh nhu cầu sau phản hồi Lead",
+  nextStepDue: lead.nextFollowUpDate,
+  notes: [lead.replyNotes, lead.notes, `Chuyển từ Lead ${lead.id} · Nguồn: ${lead.source || "Email Outbound"}`].filter(Boolean).join("\n"),
 });
 
 const quoteSequence = (date: string, rawCustomerCode: string, quotations: Quotation[], excludedId = "") => {
@@ -719,6 +745,40 @@ export function CrmApp() {
 
   const openCreate = () => { setDraft(emptyDraft()); setModalOpen(true); };
   const openEdit = (opportunity: Opportunity) => { setDraft(fromOpportunity(opportunity)); setModalOpen(true); };
+  const convertLead = (lead: Lead) => {
+    setDraft(fromLeadToOpportunity(lead));
+    setModalOpen(true);
+    setNotice("Thông tin Lead đã được điền sẵn. Bổ sung mã khách hàng, sản phẩm/ứng dụng và lưu cơ hội.");
+    window.setTimeout(() => setNotice(""), 4200);
+  };
+  const saveLead = async (lead: LeadDraft) => Boolean(await mutate(
+    { action: "saveLead", ...lead },
+    lead.id ? "Đã cập nhật Lead." : "Đã thêm Lead vào danh sách Email Outbound.",
+  ));
+  const deleteLead = async (lead: Lead) => {
+    const relation = lead.convertedOpportunityId ? " Cơ hội đã chuyển đổi vẫn được giữ nguyên trong CRM." : "";
+    if (!window.confirm(`Xóa Lead "${lead.companyName}" khỏi danh sách tìm kiếm?${relation}`)) return;
+    await mutate({ action: "deleteLead", id: lead.id }, "Đã xóa Lead khỏi danh sách tìm kiếm.");
+  };
+  const saveActivity = async (activity: ActivityDraft) => {
+    const result = await mutate(
+      { action: "saveActivity", ...activity },
+      activity.id ? "Đã cập nhật dòng Follow-up." : "Đã lưu Follow-up và cập nhật Next Step hiện tại.",
+    );
+    if (result && !activity.id && draft.id === activity.opportunityId) {
+      setDraft({
+        ...draft,
+        lastContactDate: activity.activityDate,
+        nextStep: activity.nextStep || draft.nextStep,
+        nextStepDue: activity.dueDate || draft.nextStepDue,
+      });
+    }
+    return Boolean(result);
+  };
+  const deleteActivity = async (activity: Activity) => {
+    if (!window.confirm(`Xóa dòng Follow-up ngày ${shortDate(activity.activityDate)}?`)) return;
+    await mutate({ action: "deleteActivity", id: activity.id }, "Đã xóa dòng Follow-up.");
+  };
   const openQuote = (opportunity: Opportunity, quotation?: Quotation, sourceProductLines?: OpportunityProductLine[]) => {
     setQuoteDraft(quotation ? fromQuotation(quotation) : emptyQuote(opportunity, data?.quotations ?? [], sourceProductLines));
     setQuoteModalOpen(true);
@@ -954,6 +1014,7 @@ export function CrmApp() {
 
   const navItems: { id: View; label: string; icon: IconName; count?: number }[] = [
     { id: "dashboard", label: "Tổng quan", icon: "grid" },
+    { id: "leads", label: "Lead & Email", icon: "mail", count: data?.leads.filter((lead) => lead.status === "Có phản hồi").length },
     { id: "actions", label: "Việc cần làm", icon: "check", count: overdueCount },
     { id: "pipeline", label: "Pipeline", icon: "pipeline" },
     { id: "records", label: "Danh sách CRM", icon: "users" },
@@ -1033,6 +1094,13 @@ export function CrmApp() {
           onGoActions={() => setView("actions")}
           onGoPipeline={() => setView("pipeline")}
         />}
+        {view === "leads" && <LeadView
+          leads={data?.leads ?? []}
+          saving={saving}
+          onSave={saveLead}
+          onDelete={deleteLead}
+          onConvert={convertLead}
+        />}
         {view === "actions" && <ActionCenter items={actionItems} onOpen={openEdit} onComplete={completeStep} saving={saving}/>} 
         {view === "pipeline" && <Pipeline opportunities={opportunities} onOpen={openEdit} onMove={moveStage} saving={saving}/>} 
         {view === "records" && <Records
@@ -1082,6 +1150,9 @@ export function CrmApp() {
       accounts={data?.accounts ?? []}
       contacts={data?.contacts ?? []}
       pricing={pricing}
+      activities={data?.activities ?? []}
+      onSaveActivity={saveActivity}
+      onDeleteActivity={deleteActivity}
       onClose={() => setModalOpen(false)}
       onSubmit={saveDraft}
       saving={saving}
@@ -1693,12 +1764,15 @@ function CustomerCodePicker({ value, accounts, lookupEnabled, onChange, onSelect
   </div>;
 }
 
-function OpportunityModal({ draft, setDraft, accounts, contacts, pricing, onClose, onSubmit, saving }: {
+function OpportunityModal({ draft, setDraft, accounts, contacts, pricing, activities, onSaveActivity, onDeleteActivity, onClose, onSubmit, saving }: {
   draft: Draft;
   setDraft: (draft: Draft) => void;
   accounts: Account[];
   contacts: Contact[];
   pricing: PricingSettings | null;
+  activities: Activity[];
+  onSaveActivity: (activity: ActivityDraft) => Promise<boolean>;
+  onDeleteActivity: (activity: Activity) => Promise<void>;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   saving: boolean;
@@ -1777,7 +1851,7 @@ function OpportunityModal({ draft, setDraft, accounts, contacts, pricing, onClos
   const temperature = getTemperature(score);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className={`modal opportunity-modal ${draft.id ? "is-edit" : "is-create"}`} role="dialog" aria-modal="true" aria-label={draft.id ? "Cập nhật cơ hội" : "Thêm cơ hội"}>
-      <header className="modal-header"><div><span>{draft.id || "CƠ HỘI MỚI"}</span><h2>{draft.id ? "Cập nhật cơ hội" : "Thêm cơ hội mới"}</h2><p>Nhập đủ dữ liệu để hệ thống tự chấm điểm và xếp ưu tiên.</p></div><button className="modal-close" onClick={onClose} aria-label="Đóng"><Icon name="close"/></button></header>
+      <header className="modal-header"><div><span>{draft.id || (draft.sourceLeadId ? `CHUYỂN TỪ ${draft.sourceLeadId}` : "CƠ HỘI MỚI")}</span><h2>{draft.id ? "Cập nhật cơ hội" : draft.sourceLeadId ? "Chuyển Lead thành cơ hội" : "Thêm cơ hội mới"}</h2><p>{draft.sourceLeadId ? "Thông tin Lead đã được điền sẵn; bổ sung dữ liệu bán hàng để đưa vào Pipeline." : "Nhập đủ dữ liệu để hệ thống tự chấm điểm và xếp ưu tiên."}</p></div><button className="modal-close" onClick={onClose} aria-label="Đóng"><Icon name="close"/></button></header>
       <form onSubmit={onSubmit} autoComplete="off">
         <div className="modal-body">
           <section className="form-section"><div className="section-title"><div><Icon name="building" size={18}/></div><span><strong>Thông tin công ty</strong><small>Account</small></span></div><div className="form-grid">
@@ -1824,6 +1898,15 @@ function OpportunityModal({ draft, setDraft, accounts, contacts, pricing, onClos
           <section className="form-section scoring-section"><div className="section-title"><div><Icon name="target" size={18}/></div><span><strong>Lead Scoring tự động</strong><small>Chấm 0–5 cho từng tiêu chí</small></span><div className={`live-score live-${temperature.toLowerCase()}`}><span>{temperature}</span><strong>{score}/100</strong></div></div><div className="score-grid">
             {SCORE_FIELDS.map((field) => <label className="score-field" key={field.key}><span>{field.label}<small>Trọng số {field.weight}%</small></span><select value={draft[field.key]} onChange={(e) => update(field.key, Number(e.target.value))}><option value={0}>0 — Chưa có</option><option value={1}>1 — Rất thấp</option><option value={2}>2 — Thấp</option><option value={3}>3 — Trung bình</option><option value={4}>4 — Tốt</option><option value={5}>5 — Rất tốt</option></select></label>)}
           </div><p className="score-note">Điểm cuối còn tự điều chỉnh theo độ mới của lần liên hệ và tình trạng Next Step.</p></section>
+          <FollowUpPanel
+            opportunityId={draft.id}
+            contactName={draft.contactName}
+            owner={draft.owner}
+            activities={activities}
+            saving={saving}
+            onSave={onSaveActivity}
+            onDelete={onDeleteActivity}
+          />
         </div>
         <footer className="modal-footer"><span><b>*</b> Trường bắt buộc</span><div><button type="button" className="secondary-button modal-cancel" onClick={onClose}>Hủy</button><button type="submit" name="opportunityAction" value="save" className="secondary-button save-button" disabled={saving}>{saving ? "Đang lưu..." : draft.id ? "Lưu thay đổi" : "Tạo cơ hội"}</button><button type="submit" name="opportunityAction" value="save-quote" className="primary-button opportunity-quote-button" disabled={saving}>{saving ? "Đang xử lý..." : <><Icon name="file" size={16}/>Lưu & chuyển sang báo giá</>}</button></div></footer>
       </form>
