@@ -76,17 +76,25 @@ const quotationDescription = (item: Quotation["items"][number]) => {
   return lines.filter(Boolean).join("\n");
 };
 
+const quotationRowHeight = (description: string) => {
+  const visualLines = description.split("\n").reduce((total, line) => total + Math.max(1, Math.ceil(line.length / 48)), 0);
+  return Math.max(52, Math.min(150, 14 + visualLines * 15));
+};
+
 export function generateQuotationXlsx(template: Uint8Array, quotation: Quotation) {
   const files = unzipSync(template);
   const read = (name: string) => strFromU8(files[name]);
   const write = (name: string, value: string) => { files[name] = strToU8(value); };
+  const worksheetPath = Object.keys(files).find((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+  const drawingPath = Object.keys(files).find((name) => /^xl\/drawings\/drawing\d+\.xml$/.test(name));
+  if (!worksheetPath) throw new Error("Mẫu báo giá thiếu worksheet.");
   const items = quotation.items.length > 0 ? quotation.items : [{
     id: "", quotationId: quotation.id, lineNo: 1, itemNumber: "", description: "", application: "", unit: "PCS", quantity: 1,
     productId: "", listPrice: 0, discountPercent: 0, origin: "", warranty: "12 tháng", unitPrice: 0, amount: 0,
   }];
   const delta = items.length - 1;
 
-  let sheetXml = read("xl/worksheets/sheet2.xml");
+  let sheetXml = read(worksheetPath);
   const sheetDataMatch = sheetXml.match(/<x:sheetData>([\s\S]*?)<\/x:sheetData>/);
   if (!sheetDataMatch) throw new Error("Mẫu báo giá thiếu vùng dữ liệu.");
   const rows = [...sheetDataMatch[1].matchAll(/<x:row\b[^>]*(?:\/>|>[\s\S]*?<\/x:row>)/g)].map((match) => match[0]);
@@ -101,10 +109,11 @@ export function generateQuotationXlsx(template: Uint8Array, quotation: Quotation
       for (const [index, item] of items.entries()) {
         const row = 18 + index;
         let itemRow = shiftRowXml(baseItemRow, 18, row);
-        itemRow = itemRow.replace(/\bht="[^"]+"/, 'ht="52"');
+        const description = quotationDescription(item);
+        itemRow = itemRow.replace(/\bht="[^"]+"/, `ht="${quotationRowHeight(description)}"`);
         itemRow = replaceCell(itemRow, `A${row}`, (style) => numberCell(`A${row}`, style, index + 1));
         itemRow = replaceCell(itemRow, `B${row}`, (style) => stringCell(`B${row}`, style, item.itemNumber));
-        itemRow = replaceCell(itemRow, `C${row}`, (style) => stringCell(`C${row}`, style, quotationDescription(item)));
+        itemRow = replaceCell(itemRow, `C${row}`, (style) => stringCell(`C${row}`, style, description));
         itemRow = replaceCell(itemRow, `D${row}`, (style) => stringCell(`D${row}`, style, ""));
         itemRow = replaceCell(itemRow, `E${row}`, (style) => stringCell(`E${row}`, style, item.unit));
         itemRow = replaceCell(itemRow, `F${row}`, (style) => numberCell(`F${row}`, style, item.quantity));
@@ -154,14 +163,25 @@ export function generateQuotationXlsx(template: Uint8Array, quotation: Quotation
     });
     return `<x:mergeCells>${entries.join("")}</x:mergeCells>`;
   });
-  write("xl/worksheets/sheet2.xml", sheetXml);
+  sheetXml = sheetXml.replace(
+    /(<x:worksheet\b[^>]*>)/,
+    '$1<x:sheetPr><x:pageSetUpPr fitToPage="1" autoPageBreaks="0" /></x:sheetPr>',
+  );
+  sheetXml = sheetXml.replace(
+    /<x:pageMargins\b[^>]*\/>/,
+    '<x:pageMargins left="0.3" right="0.3" top="0.4" bottom="0.4" header="0.2" footer="0.2" />' +
+    '<x:pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="1" horizontalDpi="300" verticalDpi="300" />',
+  );
+  write(worksheetPath, sheetXml);
 
-  let drawingXml = read("xl/drawings/drawing2.xml");
-  drawingXml = drawingXml.replace(/<xdr:row>(\d+)<\/xdr:row>/g, (_all, value) => {
-    const row = Number(value);
-    return `<xdr:row>${row >= 18 ? row + delta : row}</xdr:row>`;
-  });
-  write("xl/drawings/drawing2.xml", drawingXml);
+  if (drawingPath) {
+    let drawingXml = read(drawingPath);
+    drawingXml = drawingXml.replace(/<xdr:row>(\d+)<\/xdr:row>/g, (_all, value) => {
+      const row = Number(value);
+      return `<xdr:row>${row >= 18 ? row + delta : row}</xdr:row>`;
+    });
+    write(drawingPath, drawingXml);
+  }
 
   const sheetName = quotationSheetName(quotation.quotationNo);
   let workbookXml = read("xl/workbook.xml").replace(/(<x:sheet\s+name=")[^"]+("[^>]*>)/, `$1${escapeXml(sheetName)}$2`);

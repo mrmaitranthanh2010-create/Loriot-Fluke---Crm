@@ -1,5 +1,5 @@
 import { ensureDatabase } from "@/db";
-import { emptyWeeklyReport, type WeeklyPlanItem, type WeeklyProjectItem, type WeeklyReport, type WeeklyReportSummary } from "@/lib/operations";
+import { companyWeekNumber, emptyWeeklyReport, isoWeekNumber, type WeeklyPlanItem, type WeeklyProjectItem, type WeeklyReport, type WeeklyReportSummary } from "@/lib/operations";
 
 type Input = Record<string, unknown>;
 type WeeklyRow = Omit<WeeklyReport, "plan" | "projects"> & { planJson: string; projectsJson: string };
@@ -29,6 +29,11 @@ const rowToReport = (row: WeeklyRow): WeeklyReport => ({
   projects: parseJson<WeeklyProjectItem[]>(row.projectsJson, []),
 });
 
+const correctLegacyWeekNumber = <T extends { weekStart: string; weekNumber: number }>(report: T): T =>
+  report.weekNumber === isoWeekNumber(report.weekStart)
+    ? { ...report, weekNumber: companyWeekNumber(report.weekStart) }
+    : report;
+
 async function loadReport(request: Request) {
   const db = await ensureDatabase();
   const url = new URL(request.url);
@@ -41,7 +46,10 @@ async function loadReport(request: Request) {
   const recent = await db.prepare(`SELECT id, week_start AS weekStart, week_end AS weekEnd, report_date AS reportDate,
       week_number AS weekNumber, status, updated_at AS updatedAt FROM weekly_reports ORDER BY week_start DESC LIMIT 16`)
     .all<WeeklyReportSummary>();
-  return { report: row ? rowToReport(row) : empty, recent: recent.results ?? [] };
+  return {
+    report: row ? correctLegacyWeekNumber(rowToReport(row)) : empty,
+    recent: (recent.results ?? []).map(correctLegacyWeekNumber),
+  };
 }
 
 async function saveReport(input: Input) {

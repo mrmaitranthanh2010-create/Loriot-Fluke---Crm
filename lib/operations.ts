@@ -90,6 +90,12 @@ export function isoWeekNumber(value: string) {
   return Math.ceil((((utc.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
 }
 
+// Quy ước báo cáo nội bộ đánh số cao hơn ISO một tuần:
+// 17/08/2026 là W35, vì vậy 24/08/2026 là W36.
+export function companyWeekNumber(value: string) {
+  return isoWeekNumber(value) + 1;
+}
+
 export function emptyWeeklyReport(value = isoDate(new Date())): WeeklyReport {
   const { weekStart, weekEnd } = weekBounds(value);
   return {
@@ -97,7 +103,7 @@ export function emptyWeeklyReport(value = isoDate(new Date())): WeeklyReport {
     weekStart,
     weekEnd,
     reportDate: weekEnd,
-    weekNumber: isoWeekNumber(weekStart),
+    weekNumber: companyWeekNumber(weekStart),
     reporter: "Mai Trần Thành",
     status: "Draft",
     sourceFile: "",
