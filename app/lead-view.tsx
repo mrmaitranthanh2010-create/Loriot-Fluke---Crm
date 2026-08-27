@@ -25,6 +25,7 @@ const emptyLead = (): LeadDraft => ({
   replyNotes: "",
   notes: "",
   owner: "Mai Trần Thành",
+  emailOptOut: false,
 });
 
 const fromLead = (lead: Lead): LeadDraft => ({
@@ -45,6 +46,7 @@ const fromLead = (lead: Lead): LeadDraft => ({
   replyNotes: lead.replyNotes,
   notes: lead.notes,
   owner: lead.owner,
+  emailOptOut: lead.emailOptOut,
 });
 
 const normalized = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -109,6 +111,7 @@ export function LeadView({ leads, saving, onSave, onDelete, onConvert, onRefresh
     </div></section><section className="form-section"><div className="section-title"><div>2</div><span><strong>Email Outbound và Follow-up</strong><small>Prospecting history</small></span></div><div className="form-grid">
       <label className="form-field"><span>Nguồn Lead</span><input value={draft.source} onChange={(event) => update("source", event.target.value)} placeholder="Website, triển lãm, giới thiệu..."/></label>
       <label className="form-field"><span>Trạng thái</span><select value={draft.status} disabled={draft.status === "Đã chuyển cơ hội"} onChange={(event) => update("status", event.target.value as LeadDraft["status"])}>{LEAD_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+      <label className="form-field checkbox-field"><input type="checkbox" checked={draft.emailOptOut} onChange={(event) => update("emailOptOut", event.target.checked)}/><span>Không gửi email tự động cho Lead này</span></label>
       <label className="form-field"><span>Ngày gửi email gần nhất</span><input type="date" value={draft.lastEmailDate} onChange={(event) => update("lastEmailDate", event.target.value)}/></label>
       <label className="form-field"><span>Ngày Follow-up tiếp theo</span><input type="date" value={draft.nextFollowUpDate} onChange={(event) => update("nextFollowUpDate", event.target.value)}/></label>
       <label className="form-field field-wide"><span>Tiêu đề / chiến dịch email</span><input value={draft.emailSubject} onChange={(event) => update("emailSubject", event.target.value)} placeholder="Ví dụ: Giải pháp kiểm tra điện Fluke cho nhà máy"/></label>

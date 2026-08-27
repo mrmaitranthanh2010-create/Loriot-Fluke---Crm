@@ -49,6 +49,7 @@ export const prospectingLeads = sqliteTable("prospecting_leads", {
   replyNotes: text("reply_notes").notNull().default(""),
   notes: text("notes").notNull().default(""),
   owner: text("owner").notNull().default("Mai Trần Thành"),
+  emailOptOut: integer("email_opt_out").notNull().default(0),
   convertedOpportunityId: text("converted_opportunity_id").notNull().default(""),
   convertedAt: text("converted_at").notNull().default(""),
   createdAt: text("created_at").notNull(),
@@ -95,6 +96,14 @@ export const emailMessages = sqliteTable("email_messages", {
   subject: text("subject").notNull().default(""),
   bodyText: text("body_text").notNull().default(""),
   status: text("status").notNull().default("Queued"),
+  campaignId: text("campaign_id").notNull().default(""),
+  classification: text("classification").notNull().default(""),
+  aiSummary: text("ai_summary").notNull().default(""),
+  suggestedAction: text("suggested_action").notNull().default(""),
+  draftReply: text("draft_reply").notNull().default(""),
+  aiConfidence: real("ai_confidence").notNull().default(0),
+  aiSource: text("ai_source").notNull().default(""),
+  aiProcessedAt: text("ai_processed_at").notNull().default(""),
   providerMessageId: text("provider_message_id").notNull().default(""),
   errorMessage: text("error_message").notNull().default(""),
   sentAt: text("sent_at").notNull().default(""),
@@ -104,6 +113,67 @@ export const emailMessages = sqliteTable("email_messages", {
   index("idx_email_messages_lead_created").on(table.leadId, table.createdAt),
   uniqueIndex("idx_email_messages_provider_id").on(table.providerMessageId),
 ]);
+
+export const emailAutomationSettings = sqliteTable("email_automation_settings", {
+  id: text("id").primaryKey(),
+  enabled: integer("enabled").notNull().default(0),
+  dailyLimit: integer("daily_limit").notNull().default(20),
+  batchSize: integer("batch_size").notNull().default(2),
+  sendStartHour: integer("send_start_hour").notNull().default(8),
+  sendEndHour: integer("send_end_hour").notNull().default(17),
+  weekdaysOnly: integer("weekdays_only").notNull().default(1),
+  autoClassifyReplies: integer("auto_classify_replies").notNull().default(1),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const emailCampaigns = sqliteTable("email_campaigns", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  objective: text("objective").notNull().default(""),
+  status: text("status").notNull().default("Draft"),
+  startDate: text("start_date").notNull(),
+  subjectTemplate: text("subject_template").notNull(),
+  bodyTemplate: text("body_template").notNull(),
+  followUpEnabled: integer("follow_up_enabled").notNull().default(0),
+  followUpDelayDays: integer("follow_up_delay_days").notNull().default(4),
+  followUpSubjectTemplate: text("follow_up_subject_template").notNull().default(""),
+  followUpBodyTemplate: text("follow_up_body_template").notNull().default(""),
+  assetIdsJson: text("asset_ids_json").notNull().default("[]"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("idx_email_campaigns_status_start").on(table.status, table.startDate)]);
+
+export const emailCampaignRecipients = sqliteTable("email_campaign_recipients", {
+  id: text("id").primaryKey(),
+  campaignId: text("campaign_id").notNull().references(() => emailCampaigns.id, { onDelete: "cascade" }),
+  leadId: text("lead_id").notNull().references(() => prospectingLeads.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("Queued"),
+  currentStep: integer("current_step").notNull().default(0),
+  nextSendAt: text("next_send_at").notNull().default(""),
+  sentAt: text("sent_at").notNull().default(""),
+  repliedAt: text("replied_at").notNull().default(""),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error").notNull().default(""),
+  emailMessageId: text("email_message_id").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_email_campaign_recipient_unique").on(table.campaignId, table.leadId),
+  index("idx_email_campaign_recipient_queue").on(table.status, table.nextSendAt),
+  index("idx_email_campaign_recipient_lead").on(table.leadId),
+]);
+
+export const emailAutomationRuns = sqliteTable("email_automation_runs", {
+  id: text("id").primaryKey(),
+  runType: text("run_type").notNull().default("Scheduled"),
+  status: text("status").notNull().default("Running"),
+  repliesAdded: integer("replies_added").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  errorMessage: text("error_message").notNull().default(""),
+  startedAt: text("started_at").notNull(),
+  completedAt: text("completed_at").notNull().default(""),
+}, (table) => [index("idx_email_automation_runs_started").on(table.startedAt)]);
 
 export const opportunities = sqliteTable("opportunities", {
   id: text("id").primaryKey(),

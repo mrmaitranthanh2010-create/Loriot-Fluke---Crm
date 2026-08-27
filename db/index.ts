@@ -71,6 +71,7 @@ const CREATE_STATEMENTS = [
     reply_notes TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     owner TEXT NOT NULL DEFAULT 'Mai Trần Thành',
+    email_opt_out INTEGER NOT NULL DEFAULT 0,
     converted_opportunity_id TEXT NOT NULL DEFAULT '',
     converted_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -110,11 +111,72 @@ const CREATE_STATEMENTS = [
     subject TEXT NOT NULL DEFAULT '',
     body_text TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'Queued',
+    campaign_id TEXT NOT NULL DEFAULT '',
+    classification TEXT NOT NULL DEFAULT '',
+    ai_summary TEXT NOT NULL DEFAULT '',
+    suggested_action TEXT NOT NULL DEFAULT '',
+    draft_reply TEXT NOT NULL DEFAULT '',
+    ai_confidence REAL NOT NULL DEFAULT 0,
+    ai_source TEXT NOT NULL DEFAULT '',
+    ai_processed_at TEXT NOT NULL DEFAULT '',
     provider_message_id TEXT NOT NULL DEFAULT '',
     error_message TEXT NOT NULL DEFAULT '',
     sent_at TEXT NOT NULL DEFAULT '',
     received_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS email_automation_settings (
+    id TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    daily_limit INTEGER NOT NULL DEFAULT 20,
+    batch_size INTEGER NOT NULL DEFAULT 2,
+    send_start_hour INTEGER NOT NULL DEFAULT 8,
+    send_end_hour INTEGER NOT NULL DEFAULT 17,
+    weekdays_only INTEGER NOT NULL DEFAULT 1,
+    auto_classify_replies INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS email_campaigns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    objective TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'Draft',
+    start_date TEXT NOT NULL,
+    subject_template TEXT NOT NULL,
+    body_template TEXT NOT NULL,
+    follow_up_enabled INTEGER NOT NULL DEFAULT 0,
+    follow_up_delay_days INTEGER NOT NULL DEFAULT 4,
+    follow_up_subject_template TEXT NOT NULL DEFAULT '',
+    follow_up_body_template TEXT NOT NULL DEFAULT '',
+    asset_ids_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS email_campaign_recipients (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+    lead_id TEXT NOT NULL REFERENCES prospecting_leads(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'Queued',
+    current_step INTEGER NOT NULL DEFAULT 0,
+    next_send_at TEXT NOT NULL DEFAULT '',
+    sent_at TEXT NOT NULL DEFAULT '',
+    replied_at TEXT NOT NULL DEFAULT '',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    email_message_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS email_automation_runs (
+    id TEXT PRIMARY KEY,
+    run_type TEXT NOT NULL DEFAULT 'Scheduled',
+    status TEXT NOT NULL DEFAULT 'Running',
+    replies_added INTEGER NOT NULL DEFAULT 0,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT NOT NULL DEFAULT '',
+    started_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE TABLE IF NOT EXISTS opportunities (
     id TEXT PRIMARY KEY,
@@ -279,6 +341,11 @@ const CREATE_STATEMENTS = [
   "CREATE INDEX IF NOT EXISTS idx_email_messages_lead_created ON email_messages(lead_id, created_at)",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_id ON email_messages(provider_message_id)",
   "CREATE INDEX IF NOT EXISTS idx_email_assets_created ON email_assets(created_at)",
+  "CREATE INDEX IF NOT EXISTS idx_email_campaigns_status_start ON email_campaigns(status, start_date)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_email_campaign_recipient_unique ON email_campaign_recipients(campaign_id, lead_id)",
+  "CREATE INDEX IF NOT EXISTS idx_email_campaign_recipient_queue ON email_campaign_recipients(status, next_send_at)",
+  "CREATE INDEX IF NOT EXISTS idx_email_campaign_recipient_lead ON email_campaign_recipients(lead_id)",
+  "CREATE INDEX IF NOT EXISTS idx_email_automation_runs_started ON email_automation_runs(started_at)",
   "CREATE INDEX IF NOT EXISTS idx_quotations_opportunity ON quotations(opportunity_id)",
   "CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id)",
   "CREATE INDEX IF NOT EXISTS idx_products_model ON products(normalized_model)",
@@ -290,6 +357,21 @@ const CREATE_STATEMENTS = [
 
 const ACCOUNT_COLUMNS = [
   ["customer_code", "TEXT NOT NULL DEFAULT ''"],
+] as const;
+
+const LEAD_COLUMNS = [
+  ["email_opt_out", "INTEGER NOT NULL DEFAULT 0"],
+] as const;
+
+const EMAIL_MESSAGE_COLUMNS = [
+  ["campaign_id", "TEXT NOT NULL DEFAULT ''"],
+  ["classification", "TEXT NOT NULL DEFAULT ''"],
+  ["ai_summary", "TEXT NOT NULL DEFAULT ''"],
+  ["suggested_action", "TEXT NOT NULL DEFAULT ''"],
+  ["draft_reply", "TEXT NOT NULL DEFAULT ''"],
+  ["ai_confidence", "REAL NOT NULL DEFAULT 0"],
+  ["ai_source", "TEXT NOT NULL DEFAULT ''"],
+  ["ai_processed_at", "TEXT NOT NULL DEFAULT ''"],
 ] as const;
 
 const OPPORTUNITY_COLUMNS = [
@@ -372,6 +454,30 @@ async function initializeDatabase() {
     )`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_accounts_customer_code ON accounts(customer_code)").run();
 
+  const leadColumnResult = await db.prepare("PRAGMA table_info(prospecting_leads)").all<{ name: string }>();
+  const existingLeadColumns = new Set((leadColumnResult.results ?? []).map((column) => column.name));
+  for (const [name, definition] of LEAD_COLUMNS) {
+    if (!existingLeadColumns.has(name)) {
+      try {
+        await db.prepare(`ALTER TABLE prospecting_leads ADD COLUMN ${name} ${definition}`).run();
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+  }
+
+  const emailMessageColumnResult = await db.prepare("PRAGMA table_info(email_messages)").all<{ name: string }>();
+  const existingEmailMessageColumns = new Set((emailMessageColumnResult.results ?? []).map((column) => column.name));
+  for (const [name, definition] of EMAIL_MESSAGE_COLUMNS) {
+    if (!existingEmailMessageColumns.has(name)) {
+      try {
+        await db.prepare(`ALTER TABLE email_messages ADD COLUMN ${name} ${definition}`).run();
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+  }
+
   const columnResult = await db.prepare("PRAGMA table_info(opportunities)").all<{ name: string }>();
   const existingColumns = new Set((columnResult.results ?? []).map((column) => column.name));
   for (const [name, definition] of OPPORTUNITY_COLUMNS) {
@@ -410,6 +516,11 @@ async function initializeDatabase() {
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_activities_weekly_report ON activities(include_in_weekly_report, activity_date)").run();
 
   const now = new Date().toISOString();
+  await db.prepare(`INSERT INTO email_automation_settings (
+      id, enabled, daily_limit, batch_size, send_start_hour, send_end_hour,
+      weekdays_only, auto_classify_replies, updated_at
+    ) VALUES ('primary', 0, 20, 2, 8, 17, 1, 1, ?)
+    ON CONFLICT(id) DO NOTHING`).bind(now).run();
   await db.prepare("UPDATE activities SET updated_at = created_at WHERE updated_at = ''").run();
   await db.batch([
     db.prepare(`DELETE FROM quotation_items WHERE quotation_id IN (

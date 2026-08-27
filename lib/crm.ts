@@ -25,6 +25,7 @@ export const LEAD_STATUSES = [
   "Chờ phản hồi",
   "Có phản hồi",
   "Không quan tâm",
+  "Không nhận email",
   "Email lỗi",
   "Đã chuyển cơ hội",
 ] as const;
@@ -70,6 +71,7 @@ export type Lead = {
   replyNotes: string;
   notes: string;
   owner: string;
+  emailOptOut: boolean;
   convertedOpportunityId: string;
   convertedAt: string;
   createdAt: string;
@@ -109,11 +111,77 @@ export type EmailMessageLog = {
   subject: string;
   bodyText: string;
   status: "Sent" | "Received" | "Failed";
+  campaignId: string;
+  classification: EmailReplyClassification | "";
+  aiSummary: string;
+  suggestedAction: string;
+  draftReply: string;
+  aiConfidence: number;
+  aiSource: "AI" | "Rules" | "";
+  aiProcessedAt: string;
   providerMessageId: string;
   errorMessage: string;
   sentAt: string;
   receivedAt: string;
   createdAt: string;
+};
+
+export const EMAIL_REPLY_CLASSIFICATIONS = [
+  "Có nhu cầu",
+  "Yêu cầu báo giá",
+  "Hẹn liên hệ lại",
+  "Sai người liên hệ",
+  "Không quan tâm",
+  "Từ chối nhận email",
+  "Khác",
+] as const;
+
+export type EmailReplyClassification = (typeof EMAIL_REPLY_CLASSIFICATIONS)[number];
+
+export type EmailAutomationSettings = {
+  enabled: boolean;
+  dailyLimit: number;
+  batchSize: number;
+  sendStartHour: number;
+  sendEndHour: number;
+  weekdaysOnly: boolean;
+  autoClassifyReplies: boolean;
+  updatedAt: string;
+};
+
+export type EmailCampaign = {
+  id: string;
+  name: string;
+  objective: string;
+  status: "Draft" | "Active" | "Paused" | "Completed";
+  startDate: string;
+  subjectTemplate: string;
+  bodyTemplate: string;
+  followUpEnabled: boolean;
+  followUpDelayDays: number;
+  followUpSubjectTemplate: string;
+  followUpBodyTemplate: string;
+  assetIds: string[];
+  totalRecipients: number;
+  queuedRecipients: number;
+  sentRecipients: number;
+  repliedRecipients: number;
+  completedRecipients: number;
+  failedRecipients: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EmailAutomationAnalytics = {
+  sentTotal: number;
+  sentToday: number;
+  repliesTotal: number;
+  replyRate: number;
+  convertedLeads: number;
+  activeCampaigns: number;
+  queuedRecipients: number;
+  lastRunAt: string;
+  lastRunStatus: string;
 };
 
 export type Opportunity = {

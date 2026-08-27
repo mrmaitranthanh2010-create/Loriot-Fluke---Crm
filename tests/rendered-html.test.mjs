@@ -378,6 +378,38 @@ test("separates outbound leads and reports only selected follow-up history", asy
   assert.match(operations, /const locked = report\.status === "Submitted"/);
 });
 
+test("ships the guarded AI campaign center for phase four", async () => {
+  const [panel, outreach, automationApi, automation, database, schema, worker, vite] = await Promise.all([
+    readFile(new URL("../app/email-automation-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/email-automation/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/email-automation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../vite.config.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(outreach, /<EmailAutomationPanel/);
+  assert.match(outreach, /Dùng bản nháp/);
+  assert.match(panel, /Trung tâm chiến dịch email/);
+  assert.match(panel, /Mặc định an toàn/);
+  assert.match(panel, /window\.confirm/);
+  assert.match(panel, /AI không tự gửi bản nháp trả lời/);
+  assert.match(automationApi, /action === "draftCampaignWithAi"/);
+  assert.match(automationApi, /action === "runNow"/);
+  assert.match(automation, /dailyLimit/);
+  assert.match(automation, /batchSize/);
+  assert.match(automation, /Tự động hóa đang tắt/);
+  assert.match(automation, /status IN \('Queued','Awaiting','Completed'\)/);
+  assert.match(automation, /Từ chối nhận email/);
+  assert.match(database, /VALUES \('primary', 0, 20, 2, 8, 17, 1, 1/);
+  assert.match(schema, /emailCampaignRecipients/);
+  assert.match(schema, /emailAutomationRuns/);
+  assert.match(worker, /async scheduled/);
+  assert.match(vite, /ai: \{ binding: "AI" \}/);
+  assert.match(vite, /crons: \["\*\/15 \* \* \* \*"\]/);
+});
+
 test("connects the company mailbox and records personalized Lead outreach", async () => {
   const [panel, emailApi, emailFileApi, emailAssets, emailServer, emailBranding, database, workerConfig] = await Promise.all([
     readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),

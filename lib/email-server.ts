@@ -38,6 +38,7 @@ export type IncomingEmailHeader = {
   fromEmail: string;
   fromName: string;
   subject: string;
+  bodyText: string;
   receivedAt: string;
 };
 
@@ -397,7 +398,32 @@ const headerValue = (raw: string, name: string) => {
   return unfolded.match(new RegExp(`^${name}:\\s*(.+)$`, "im"))?.[1]?.trim() || "";
 };
 
-const parseIncomingHeader = (raw: string): IncomingEmailHeader | null => {
+const decodeIncomingBody = (raw: string, headerRaw: string) => {
+  const literal = raw.match(/\{\d+\}\r?\n([\s\S]*)/i)?.[1] || "";
+  let value = literal.replace(/\r?\n\)\r?\nA\d+ OK[\s\S]*$/i, "").trim();
+  const transferEncoding = headerValue(headerRaw, "Content-Transfer-Encoding").toLowerCase();
+  try {
+    if (transferEncoding === "base64") value = new TextDecoder().decode(base64ToBytes(value.replace(/\s+/g, "")));
+    else if (transferEncoding === "quoted-printable") value = decodeQuotedPrintable(value.replace(/=\r?\n/g, ""));
+  } catch {
+    // Keep the bounded raw preview if the sender used an unsupported encoding.
+  }
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 8_000);
+};
+
+const parseIncomingHeader = (raw: string, bodyText = ""): IncomingEmailHeader | null => {
   const from = decodeMimeWord(headerValue(raw, "From"));
   const fromEmail = (from.match(/<([^<>\s]+@[^<>\s]+)>/)?.[1]
     || from.match(/[^\s<>]+@[^\s<>]+/)?.[0]
@@ -406,11 +432,13 @@ const parseIncomingHeader = (raw: string): IncomingEmailHeader | null => {
   const fromName = from.replace(/<[^<>]+>/, "").replace(/^"|"$/g, "").trim();
   const rawDate = headerValue(raw, "Date");
   const parsedDate = new Date(rawDate);
+  const subject = decodeMimeWord(headerValue(raw, "Subject")) || "(Không có tiêu đề)";
   return {
-    messageId: headerValue(raw, "Message-ID") || `<${crypto.randomUUID()}@imap.local>`,
+    messageId: headerValue(raw, "Message-ID") || `imap:${fromEmail}:${rawDate}:${subject}`,
     fromEmail,
     fromName,
-    subject: decodeMimeWord(headerValue(raw, "Subject")) || "(Không có tiêu đề)",
+    subject,
+    bodyText,
     receivedAt: Number.isNaN(parsedDate.getTime()) ? new Date().toISOString() : parsedDate.toISOString(),
   };
 };
@@ -465,8 +493,9 @@ export class ImapClient {
     const messages: IncomingEmailHeader[] = [];
     for (const sequenceId of selected) {
       if (!/^\d+$/.test(sequenceId)) continue;
-      const raw = await this.command(`FETCH ${sequenceId} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])`);
-      const parsed = parseIncomingHeader(raw);
+      const raw = await this.command(`FETCH ${sequenceId} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID CONTENT-TYPE CONTENT-TRANSFER-ENCODING)])`);
+      const bodyRaw = await this.command(`FETCH ${sequenceId} (BODY.PEEK[TEXT]<0.12000>)`);
+      const parsed = parseIncomingHeader(raw, decodeIncomingBody(bodyRaw, raw));
       if (parsed) messages.push(parsed);
     }
     return messages;

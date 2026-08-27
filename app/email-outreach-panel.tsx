@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { EmailAsset, EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
 import { LORIOT_LOGO_DATA_URL } from "@/lib/email-branding";
+import { EmailAutomationPanel } from "@/app/email-automation-panel";
 
 type EmailPayload = {
   settings: EmailSettingsPublic;
@@ -72,6 +73,11 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   const [followUpDays, setFollowUpDays] = useState(4);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshEmailData = async () => {
+    const next = await emailRequest();
+    setData(next);
+  };
 
   useEffect(() => {
     let active = true;
@@ -222,7 +228,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   };
 
   const eligibleLeads = useMemo(() => leads.filter((lead) => {
-    if (!lead.email || lead.status === "Đã chuyển cơ hội") return false;
+    if (!lead.email || lead.emailOptOut || lead.status === "Không nhận email" || lead.status === "Đã chuyển cơ hội") return false;
     const query = normalize(recipientSearch.trim());
     return !query || normalize(`${lead.companyName} ${lead.contactName} ${lead.email}`).includes(query);
   }), [leads, recipientSearch]);
@@ -268,6 +274,18 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   const leadById = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
   const latestMessages = data?.messages.slice(0, 8) ?? [];
 
+  const openReplyDraft = (message: EmailMessageLog) => {
+    if (!message.draftReply || !message.leadId) return;
+    setSelectedIds([message.leadId]);
+    setRecipientSearch(leadById.get(message.leadId)?.companyName || "");
+    setSubject(message.subject.toLowerCase().startsWith("re:") ? message.subject : `Re: ${message.subject}`);
+    setBody(message.draftReply);
+    setFollowUpDays(4);
+    setSelectedAssetIds([]);
+    setComposeError("");
+    setComposeOpen(true);
+  };
+
   return <>
     <section className={`email-connection ${data?.settings.configured ? "is-connected" : ""}`}>
       <div className="email-connection-icon">✉</div>
@@ -287,6 +305,15 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     </section>
 
     {feedback && <div className={`email-feedback ${isError ? "error" : "success"}`}>{feedback}</div>}
+
+    {data && <EmailAutomationPanel
+      leads={leads}
+      assets={data.assets}
+      emailConfigured={data.settings.configured}
+      onChanged={async () => {
+        await Promise.all([refreshEmailData(), onRefresh()]);
+      }}
+    />}
 
     <section className="email-file-library panel">
       <header>
@@ -338,11 +365,15 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
       <header><div><span>HOẠT ĐỘNG EMAIL GẦN ĐÂY</span><strong>Lịch sử gửi và phản hồi</strong></div><small>{data?.messages.length || 0} email được lưu</small></header>
       <div className="email-history-list">{latestMessages.map((message) => {
         const lead = leadById.get(message.leadId);
-        return <article key={message.id}>
+        return <article key={message.id} className={message.classification ? "has-ai-analysis" : ""}>
           <span className={`email-direction ${message.direction}`}>{message.direction === "inbound" ? "↙ Nhận" : "↗ Gửi"}</span>
-          <div><strong>{lead?.companyName || message.recipientEmail || message.senderEmail}</strong><span>{message.subject}</span></div>
-          <div><strong>{message.direction === "inbound" ? message.senderEmail : message.recipientEmail}</strong><span>{displayTime(message.receivedAt || message.sentAt || message.createdAt)}</span></div>
-          <span className={`email-log-status ${message.status.toLowerCase()}`}>{message.status === "Sent" ? "Đã gửi" : message.status === "Received" ? "Đã nhận" : "Lỗi"}</span>
+          <div className="email-history-subject"><strong>{lead?.companyName || message.recipientEmail || message.senderEmail}</strong><span>{message.subject}</span>{message.aiSummary && <small>{message.aiSummary}</small>}</div>
+          <div className="email-history-contact"><strong>{message.direction === "inbound" ? message.senderEmail : message.recipientEmail}</strong><span>{displayTime(message.receivedAt || message.sentAt || message.createdAt)}</span>{message.suggestedAction && <small>Tiếp theo: {message.suggestedAction}</small>}</div>
+          <div className="email-history-result">
+            {message.classification && <span className="email-ai-classification">✦ {message.classification}</span>}
+            <span className={`email-log-status ${message.status.toLowerCase()}`}>{message.status === "Sent" ? "Đã gửi" : message.status === "Received" ? "Đã nhận" : "Lỗi"}</span>
+            {message.draftReply && <button type="button" onClick={() => openReplyDraft(message)}>Dùng bản nháp</button>}
+          </div>
         </article>;
       })}</div>
     </section>}

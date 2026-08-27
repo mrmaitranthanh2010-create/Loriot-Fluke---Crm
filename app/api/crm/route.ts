@@ -134,7 +134,8 @@ async function loadData() {
     db.prepare(`SELECT id, company_name AS companyName, website, industry, account_type AS accountType,
       contact_name AS contactName, title, email, phone, source, last_email_date AS lastEmailDate, status,
       next_follow_up_date AS nextFollowUpDate, email_subject AS emailSubject, reply_notes AS replyNotes,
-      notes, owner, converted_opportunity_id AS convertedOpportunityId, converted_at AS convertedAt,
+      notes, owner, email_opt_out AS emailOptOut,
+      converted_opportunity_id AS convertedOpportunityId, converted_at AS convertedAt,
       created_at AS createdAt, updated_at AS updatedAt
       FROM prospecting_leads ORDER BY updated_at DESC`).all<Lead>(),
     db.prepare(selectOpportunities).all<OpportunityRow>(),
@@ -161,7 +162,7 @@ async function loadData() {
 
   const allItems = itemResult.results ?? [];
   return {
-    leads: leadResult.results ?? [],
+    leads: (leadResult.results ?? []).map((lead) => ({ ...lead, emailOptOut: Boolean(lead.emailOptOut) })),
     opportunities: (opportunityResult.results ?? []).map((row) => enrichOpportunity(row)),
     accounts: accountResult.results ?? [],
     contacts: contactResult.results ?? [],
@@ -202,6 +203,7 @@ async function saveLead(input: Input) {
     email, textValue(input, "phone"), textValue(input, "source"), textValue(input, "lastEmailDate"), status,
     textValue(input, "nextFollowUpDate"), textValue(input, "emailSubject"), textValue(input, "replyNotes"),
     textValue(input, "notes"), textValue(input, "owner", "Mai Trần Thành"),
+    booleanValue(input, "emailOptOut") ? 1 : 0,
   ];
   if (currentId) {
     const current = await db.prepare("SELECT id, converted_opportunity_id AS convertedOpportunityId FROM prospecting_leads WHERE id = ?")
@@ -211,16 +213,17 @@ async function saveLead(input: Input) {
     values[10] = effectiveStatus;
     await db.prepare(`UPDATE prospecting_leads SET company_name = ?, website = ?, industry = ?, account_type = ?,
       contact_name = ?, title = ?, email = ?, phone = ?, source = ?, last_email_date = ?, status = ?,
-      next_follow_up_date = ?, email_subject = ?, reply_notes = ?, notes = ?, owner = ?, updated_at = ? WHERE id = ?`)
+      next_follow_up_date = ?, email_subject = ?, reply_notes = ?, notes = ?, owner = ?, email_opt_out = ?,
+      updated_at = ? WHERE id = ?`)
       .bind(...values, now, currentId).run();
     return;
   }
   const id = `LED-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   await db.prepare(`INSERT INTO prospecting_leads (
     id, company_name, website, industry, account_type, contact_name, title, email, phone, source,
-    last_email_date, status, next_follow_up_date, email_subject, reply_notes, notes, owner,
+    last_email_date, status, next_follow_up_date, email_subject, reply_notes, notes, owner, email_opt_out,
     converted_opportunity_id, converted_at, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)`)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)`)
     .bind(id, ...values, now, now).run();
 }
 

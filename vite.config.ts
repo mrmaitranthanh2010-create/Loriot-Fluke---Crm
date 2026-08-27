@@ -12,9 +12,11 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
   main: "./worker/index.ts",
-  compatibility_date: "2026-08-24",
+  compatibility_date: "2026-08-27",
   compatibility_flags: ["nodejs_compat"],
   assets: { binding: "ASSETS" },
+  ai: { binding: "AI" },
+  triggers: { crons: ["*/15 * * * *"] },
   vars: { CRM_AUTH_USERNAME: "mai" },
   d1_databases: d1
     ? [

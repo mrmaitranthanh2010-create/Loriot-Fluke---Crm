@@ -8,6 +8,8 @@ interface Env extends HandlerEnv {
   CRM_AUTH_PASSWORD?: string;
 }
 
+type ScheduledEvent = { cron: string };
+
 function utf8Base64(value: string): string {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
@@ -60,6 +62,27 @@ const worker = {
     if (!constantTimeEqual(provided, expected)) return unauthorized();
 
     return handler.fetch(request, env, ctx);
+  },
+  async scheduled(controller: ScheduledEvent): Promise<void> {
+    try {
+      const [{ ensureDatabase }, { runEmailAutomation }] = await Promise.all([
+        import("@/db"),
+        import("@/lib/email-automation"),
+      ]);
+      const db = await ensureDatabase();
+      const result = await runEmailAutomation(db, "Scheduled");
+      console.log(JSON.stringify({
+        message: "scheduled email automation completed",
+        cron: controller.cron,
+        ...result,
+      }));
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: "scheduled email automation failed",
+        cron: controller.cron,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
   },
 };
 

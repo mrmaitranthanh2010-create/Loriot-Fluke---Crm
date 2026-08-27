@@ -3,7 +3,6 @@ import {
   decryptEmailPassword,
   encryptEmailPassword,
   hasEmailCredentialKey,
-  ImapClient,
   SmtpClient,
   bytesToBase64,
   type EmailConnectionSettings,
@@ -19,6 +18,7 @@ import {
   MAX_EMAIL_TOTAL_BYTES,
   publicEmailAsset,
 } from "@/lib/email-assets";
+import { syncAndClassifyReplies } from "@/lib/email-automation";
 
 type Input = Record<string, unknown>;
 type EmailSettingsRow = EmailConnectionSettings & {
@@ -102,6 +102,9 @@ async function loadEmailData(db: CrmDatabase) {
     settingsRow(db),
     db.prepare(`SELECT id, lead_id AS leadId, direction, sender_email AS senderEmail,
       recipient_email AS recipientEmail, subject, body_text AS bodyText, status,
+      campaign_id AS campaignId, classification, ai_summary AS aiSummary,
+      suggested_action AS suggestedAction, draft_reply AS draftReply,
+      ai_confidence AS aiConfidence, ai_source AS aiSource, ai_processed_at AS aiProcessedAt,
       provider_message_id AS providerMessageId, error_message AS errorMessage,
       sent_at AS sentAt, received_at AS receivedAt, created_at AS createdAt
       FROM email_messages ORDER BY created_at DESC LIMIT 120`).all<EmailMessageLog>(),
@@ -308,49 +311,6 @@ async function sendLeadEmails(db: CrmDatabase, input: Input) {
   return { sent, failed, errors: errors.slice(0, 5) };
 }
 
-async function syncReplies(db: CrmDatabase) {
-  const { settings, password } = await requireConnection(db);
-  const client = await ImapClient.open(settings, password);
-  let headers;
-  try {
-    headers = await client.recentHeaders(30, 60);
-  } finally {
-    await client.close();
-  }
-  const leadResult = await db.prepare(`SELECT id, email, company_name AS companyName, converted_opportunity_id AS convertedOpportunityId
-    FROM prospecting_leads WHERE TRIM(email) <> '' ORDER BY updated_at DESC`).all<Pick<Lead, "id" | "email" | "companyName" | "convertedOpportunityId">>();
-  const leadByEmail = new Map<string, Pick<Lead, "id" | "email" | "companyName" | "convertedOpportunityId">>();
-  for (const lead of leadResult.results ?? []) {
-    const key = lead.email.trim().toLowerCase();
-    if (key && !leadByEmail.has(key)) leadByEmail.set(key, lead);
-  }
-  let matched = 0;
-  let added = 0;
-  for (const message of headers) {
-    const lead = leadByEmail.get(message.fromEmail);
-    if (!lead) continue;
-    matched += 1;
-    const existing = await db.prepare("SELECT id FROM email_messages WHERE provider_message_id = ?")
-      .bind(message.messageId).first<{ id: string }>();
-    if (existing) continue;
-    const id = `EML-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
-    const now = new Date().toISOString();
-    await db.batch([
-      db.prepare(`INSERT INTO email_messages (
-        id, lead_id, direction, sender_email, recipient_email, subject, body_text, status,
-        provider_message_id, error_message, sent_at, received_at, created_at
-      ) VALUES (?, ?, 'inbound', ?, ?, ?, '', 'Received', ?, '', '', ?, ?)`)
-        .bind(id, lead.id, message.fromEmail, settings.fromEmail, message.subject, message.messageId, message.receivedAt, now),
-      db.prepare(`UPDATE prospecting_leads SET
-        status = CASE WHEN converted_opportunity_id <> '' THEN status ELSE 'Có phản hồi' END,
-        reply_notes = ?, updated_at = ? WHERE id = ?`)
-        .bind(`Khách phản hồi email: ${message.subject}`, now, lead.id),
-    ]);
-    added += 1;
-  }
-  return { scanned: headers.length, matched, added };
-}
-
 export async function GET() {
   try {
     const db = await ensureDatabase();
@@ -374,7 +334,7 @@ export async function POST(request: Request) {
     if (action === "saveSettings") await saveSettings(db, input);
     else if (action === "testConnection") result = { messageId: await sendTest(db) };
     else if (action === "sendLeads") result = await sendLeadEmails(db, input);
-    else if (action === "syncReplies") result = await syncReplies(db);
+    else if (action === "syncReplies") result = await syncAndClassifyReplies(db);
     else throw new Error("Thao tác email không hợp lệ.");
     return Response.json({ ...await loadEmailData(db), result });
   } catch (error) {
