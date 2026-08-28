@@ -104,12 +104,14 @@ export function EmailAutomationPanel({
   assets,
   leadSendStats,
   emailConfigured,
+  section,
   onChanged,
 }: {
   leads: Lead[];
   assets: EmailAsset[];
   leadSendStats: EmailLeadSendStat[];
   emailConfigured: boolean;
+  section: "campaigns" | "templates";
   onChanged: () => Promise<void>;
 }) {
   const [data, setData] = useState<AutomationPayload | null>(null);
@@ -393,6 +395,14 @@ export function EmailAutomationPanel({
       setFormError("Vui lòng chọn ít nhất một Lead.");
       return;
     }
+    const duplicate = (data?.campaigns || []).find((campaign) => campaign.status !== "Completed"
+      && normalize(campaign.name.trim()) === normalize(draft.name.trim())
+      && campaign.startDate === draft.startDate
+      && campaign.industryTemplateId === draft.industryTemplateId);
+    if (duplicate) {
+      setFormError(`Đã có chiến dịch “${duplicate.name}” cùng bộ mẫu và ngày bắt đầu. Hãy dùng chiến dịch hiện có hoặc đổi tên/ngày để tránh gửi trùng.`);
+      return;
+    }
     setBusy(true);
     try {
       const next = await automationRequest({ action: "saveCampaign", ...draft });
@@ -444,7 +454,9 @@ export function EmailAutomationPanel({
     : !analytics?.activeCampaigns
       ? "Kích hoạt chiến dịch trước"
       : "";
-  const runButtonLabel = busy ? "Đang xử lý..." : runBlockedLabel || runButtonState?.label || "Chạy lịch ngay";
+  const runButtonLabel = busy
+    ? "Đang xử lý..."
+    : runBlockedLabel || runButtonState?.label || `Chạy ngay · ${analytics?.activeCampaigns || 0} chiến dịch`;
   const lastRunSummary = !analytics?.lastRunAt
     ? "Chưa chạy"
     : analytics.lastRunStatus === "Failed"
@@ -464,6 +476,12 @@ export function EmailAutomationPanel({
     const rank = { Draft: 0, Paused: 1, Active: 2, Completed: 3 } as const;
     return rank[left.status] - rank[right.status] || right.updatedAt.localeCompare(left.updatedAt);
   });
+  const campaignDuplicateCounts = campaigns.reduce((counts, campaign) => {
+    if (campaign.status === "Completed") return counts;
+    const key = `${normalize(campaign.name.trim())}|${campaign.startDate}|${campaign.industryTemplateId}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map<string, number>());
   const campaignGuidance = !data?.automation.enabled
     ? "Bật tự động hóa và lưu vận hành trước khi kích hoạt chiến dịch."
     : draftCampaignCount > 0
@@ -475,12 +493,11 @@ export function EmailAutomationPanel({
           : "Chưa có chiến dịch hoạt động. Tạo mới từ kho mẫu email bên dưới.";
 
   return <>
-    <section className={`automation-center panel ${data?.automation.enabled ? "is-enabled" : ""}`}>
+    {section === "campaigns" && <section className={`automation-center panel ${data?.automation.enabled ? "is-enabled" : ""}`}>
       <header className="automation-header">
         <div><span>GIAI ĐOẠN 4 · AI & TỰ ĐỘNG HÓA</span><strong>Trung tâm chiến dịch email</strong><small>Mặc định an toàn: giới hạn theo ngày, gửi theo lô và dừng ngay khi khách phản hồi.</small></div>
         <div className="automation-header-actions">
           <span className={`automation-master-state ${data?.automation.enabled ? "on" : "off"}`}>{data?.automation.enabled ? "ĐANG BẬT" : "ĐANG TẮT"}</span>
-          <button className="secondary-button" disabled={!data || busy} onClick={openCampaign}>＋ Tạo chiến dịch</button>
           <button className={`primary-button run-now-button ${runButtonState ? `is-${runButtonState.tone}` : ""}`} disabled={Boolean(runBlockedLabel) || busy} onClick={() => void runNow()}>{runButtonLabel}</button>
         </div>
       </header>
@@ -512,7 +529,7 @@ export function EmailAutomationPanel({
           <div className="campaign-command-summary">
             <span className="is-active"><b>{activeCampaignCount}</b> đang chạy</span>
             <span className={draftCampaignCount ? "needs-action" : ""}><b>{draftCampaignCount}</b> bản nháp</span>
-            <button className="secondary-button" disabled={!data || busy} onClick={openCampaign}>＋ Tạo mới</button>
+            <button className="primary-button" disabled={!data || busy} onClick={openCampaign}>＋ Tạo chiến dịch</button>
           </div>
         </header>
         <div className={`campaign-guidance ${draftCampaignCount || pausedCampaignCount || !data?.automation.enabled ? "needs-action" : "is-ready"}`}>
@@ -520,14 +537,16 @@ export function EmailAutomationPanel({
           <strong>{campaignGuidance}</strong>
         </div>
         <div className="campaign-list">
-          {!orderedCampaigns.length ? <div className="automation-empty"><strong>Chưa có chiến dịch</strong><span>Chọn “Tạo mới” hoặc dùng một bộ mẫu ngành ở bên dưới.</span></div> : orderedCampaigns.map((campaign, index) => {
+          {!orderedCampaigns.length ? <div className="automation-empty"><strong>Chưa có chiến dịch</strong><span>Tạo chiến dịch mới hoặc chọn một bộ mẫu trong thẻ Kho mẫu mail.</span></div> : orderedCampaigns.map((campaign, index) => {
             const replyRate = campaign.sentRecipients ? campaign.repliedRecipients / campaign.sentRecipients : 0;
+            const duplicateKey = `${normalize(campaign.name.trim())}|${campaign.startDate}|${campaign.industryTemplateId}`;
+            const isDuplicate = campaign.status !== "Completed" && (campaignDuplicateCounts.get(duplicateKey) || 0) > 1;
             const stateNote = campaign.status === "Draft" ? "Chưa gửi · cần kích hoạt"
               : campaign.status === "Paused" ? "Đang tạm dừng"
                 : campaign.status === "Active" ? "Đang vận hành theo lịch" : "Đã hoàn thành chuỗi email";
-            return <article key={campaign.id} className={`campaign-card status-${campaign.status.toLowerCase()}`}>
+            return <article key={campaign.id} className={`campaign-card status-${campaign.status.toLowerCase()} ${isDuplicate ? "is-duplicate" : ""}`}>
               <div className="campaign-index">{String(index + 1).padStart(2, "0")}</div>
-              <div className="campaign-main"><div><span className={`campaign-status ${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span><strong>{campaign.name}</strong></div><p>{campaign.objective}</p><small>{stateNote} · Bắt đầu {displayDate(campaign.startDate)} · {campaign.industryGroup ? `${campaign.industryGroup} · ` : ""}{campaign.sequenceSteps.length || (campaign.followUpEnabled ? 2 : 1)} email</small></div>
+              <div className="campaign-main"><div><span className={`campaign-status ${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span>{isDuplicate && <span className="campaign-duplicate-warning">Có thể trùng</span>}<strong>{campaign.name}</strong></div><p>{campaign.objective}</p><small>{stateNote} · Bắt đầu {displayDate(campaign.startDate)} · {campaign.industryGroup ? `${campaign.industryGroup} · ` : ""}{campaign.sequenceSteps.length || (campaign.followUpEnabled ? 2 : 1)} email</small></div>
               <div className="campaign-stats"><span><b>{campaign.totalRecipients}</b> Lead</span><span><b>{campaign.sentRecipients}</b> đã gửi</span><span><b>{campaign.repliedRecipients}</b> phản hồi</span><span><b>{(replyRate * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%</b> tỷ lệ</span></div>
               <div className="campaign-actions">
                 {campaign.status !== "Active" && campaign.status !== "Completed" && <button className="primary-button campaign-activate" disabled={busy} onClick={() => void changeCampaignStatus(campaign, "Active")}>Kích hoạt chiến dịch</button>}
@@ -539,7 +558,9 @@ export function EmailAutomationPanel({
         </div>
       </section>
 
-      <section className="email-template-library">
+    </section>}
+
+      {section === "templates" && <section className="email-template-library panel is-standalone">
         <header className="template-library-header">
           <div><span>KHO MAIL THEO NHÓM NGÀNH</span><strong>6 bộ mẫu · 24 email cá nhân hóa</strong><small>Chọn một nhóm để nạp 4 email và tự chọn các Lead mới có email thuộc đúng ngành.</small></div>
           <em>Nháp trước · Kích hoạt sau</em>
@@ -554,9 +575,7 @@ export function EmailAutomationPanel({
             <button type="button" className="secondary-button" disabled={busy} onClick={() => openTemplateCampaign(template)}>Dùng bộ mẫu</button>
           </article>;
         })}</div>
-      </section>
-
-    </section>
+      </section>}
 
     {campaignOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCampaignOpen(false); }}>
       <div className="modal campaign-modal" role="dialog" aria-modal="true" aria-label="Tạo chiến dịch email tự động">
