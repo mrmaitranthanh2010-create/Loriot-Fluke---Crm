@@ -334,7 +334,7 @@ export function EmailAutomationPanel({
 
       {settings && <div className="automation-settings">
         <label className="automation-switch"><input aria-label="Cho phép chạy lịch tự động" type="checkbox" checked={settings.enabled} onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })}/><span><strong>Cho phép chạy lịch tự động</strong><small>Chỉ chiến dịch Đang chạy mới được gửi</small></span></label>
-        <label><span>Giới hạn/ngày</span><input type="number" min={1} max={50} value={settings.dailyLimit} onChange={(event) => setSettings({ ...settings, dailyLimit: Number(event.target.value) })}/></label>
+        <label><span>Mục tiêu/ngày</span><input type="number" min={20} max={50} value={settings.dailyLimit} onChange={(event) => setSettings({ ...settings, dailyLimit: Number(event.target.value) })}/><small>Điều chỉnh từ 20–50 email</small></label>
         <label><span>Mỗi lượt</span><input type="number" min={1} max={5} value={settings.batchSize} onChange={(event) => setSettings({ ...settings, batchSize: Number(event.target.value) })}/></label>
         <label><span>Từ giờ</span><input type="number" min={0} max={22} value={settings.sendStartHour} onChange={(event) => setSettings({ ...settings, sendStartHour: Number(event.target.value) })}/></label>
         <label><span>Đến giờ</span><input type="number" min={1} max={23} value={settings.sendEndHour} onChange={(event) => setSettings({ ...settings, sendEndHour: Number(event.target.value) })}/></label>

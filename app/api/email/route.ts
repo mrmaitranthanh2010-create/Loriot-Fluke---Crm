@@ -21,6 +21,8 @@ import {
 import { syncAndClassifyReplies } from "@/lib/email-automation";
 
 type Input = Record<string, unknown>;
+const MAX_LEAD_EMAILS_PER_SEND = 50;
+
 type EmailSettingsRow = EmailConnectionSettings & {
   id: string;
   passwordCiphertext: string;
@@ -228,9 +230,11 @@ async function sendLeadEmails(db: CrmDatabase, input: Input) {
   const leadIds = Array.isArray(input.leadIds)
     ? input.leadIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
-  const uniqueIds = [...new Set(leadIds)].slice(0, 10);
+  const uniqueIds = [...new Set(leadIds)].slice(0, MAX_LEAD_EMAILS_PER_SEND);
   if (!uniqueIds.length) throw new Error("Vui lòng chọn ít nhất một Lead có email.");
-  if (leadIds.length > 10) throw new Error("Mỗi lần chỉ gửi tối đa 10 Lead để bảo vệ uy tín email công ty.");
+  if (leadIds.length > MAX_LEAD_EMAILS_PER_SEND) {
+    throw new Error(`Mỗi lần chỉ gửi tối đa ${MAX_LEAD_EMAILS_PER_SEND} Lead.`);
+  }
   const assetIds = Array.isArray(input.assetIds)
     ? input.assetIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];

@@ -215,7 +215,7 @@ export async function getAutomationSettings(db: CrmDatabase): Promise<EmailAutom
 export async function saveAutomationSettings(db: CrmDatabase, input: Input) {
   const enabled = booleanValue(input, "enabled");
   if (enabled) await connectionSettings(db);
-  const dailyLimit = clampInt(numberValue(input, "dailyLimit", 20), 1, 50);
+  const dailyLimit = clampInt(numberValue(input, "dailyLimit", 20), 20, 50);
   const batchSize = clampInt(numberValue(input, "batchSize", 2), 1, 5);
   const sendStartHour = clampInt(numberValue(input, "sendStartHour", 8), 0, 22);
   const sendEndHour = clampInt(numberValue(input, "sendEndHour", 17), sendStartHour + 1, 23);

@@ -432,7 +432,8 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
   assert.match(panel, /Tải tệp từ máy/);
   assert.match(panel, /assetIds: selectedAssetIds/);
   assert.match(panel, /Hiển thị trong nội dung/);
-  assert.match(emailApi, /slice\(0, 10\)/);
+  assert.match(emailApi, /MAX_LEAD_EMAILS_PER_SEND = 50/);
+  assert.match(emailApi, /slice\(0, MAX_LEAD_EMAILS_PER_SEND\)/);
   assert.match(emailApi, /MAX_EMAIL_TOTAL_BYTES/);
   assert.match(emailApi, /contentImages/);
   assert.match(emailApi, /attachments/);
@@ -474,7 +475,9 @@ test("groups email recipients and shows exact send history", async () => {
   assert.match(outreach, /Lọc Lead theo nhóm ngành/);
   assert.match(outreach, /Chưa gửi lần nào/);
   assert.match(outreach, /Đã gửi \$\{sentCount\} lần/);
-  assert.match(outreach, /Chọn tối đa 10/);
+  assert.match(outreach, /Chọn tối đa 50/);
+  assert.match(automation, /Điều chỉnh từ 20–50 email/);
+  assert.match(automation, /min=\{20\} max=\{50\}/);
   assert.match(automation, /Chọn nhóm đang hiển thị/);
   assert.match(automation, /Lọc lịch sử gửi cho chiến dịch/);
   assert.match(emailApi, /COUNT\(\*\) AS sentCount/);

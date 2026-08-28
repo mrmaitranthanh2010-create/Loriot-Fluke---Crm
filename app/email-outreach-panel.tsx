@@ -15,6 +15,7 @@ type EmailPayload = {
 };
 
 type SettingsDraft = EmailSettingsPublic & { password: string };
+const MAX_LEAD_EMAILS_PER_SEND = 50;
 
 const normalize = (value: string) => value
   .normalize("NFD")
@@ -265,7 +266,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     setSelectedIds((current) => {
       const next = [...current];
       for (const lead of eligibleLeads) {
-        if (next.length >= 10) break;
+        if (next.length >= MAX_LEAD_EMAILS_PER_SEND) break;
         if (!next.includes(lead.id)) next.push(lead.id);
       }
       return next;
@@ -275,8 +276,8 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   const toggleLead = (leadId: string) => {
     setSelectedIds((current) => {
       if (current.includes(leadId)) return current.filter((id) => id !== leadId);
-      if (current.length >= 10) {
-        showFeedback("Mỗi lần chỉ chọn tối đa 10 Lead.", true);
+      if (current.length >= MAX_LEAD_EMAILS_PER_SEND) {
+        showFeedback(`Mỗi lần chỉ chọn tối đa ${MAX_LEAD_EMAILS_PER_SEND} Lead.`, true);
         return current;
       }
       return [...current, leadId];
@@ -441,16 +442,16 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
 
     {composeOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setComposeOpen(false); }}>
       <div className="modal email-compose-modal" role="dialog" aria-modal="true" aria-label="Soạn email cho Lead">
-        <header className="modal-header"><div><span>EMAIL OUTBOUND</span><h2>Soạn email cho Lead</h2><p>Chọn tối đa 10 người nhận. Mỗi Lead nhận một email riêng đã cá nhân hóa.</p></div><button className="modal-close" onClick={() => setComposeOpen(false)} aria-label="Đóng">×</button></header>
+        <header className="modal-header"><div><span>EMAIL OUTBOUND</span><h2>Soạn email cho Lead</h2><p>Chọn tối đa 50 người nhận. Mỗi Lead nhận một email riêng đã cá nhân hóa.</p></div><button className="modal-close" onClick={() => setComposeOpen(false)} aria-label="Đóng">×</button></header>
         <form onSubmit={sendEmails}><div className="modal-body email-compose-grid">
           <section className="email-recipient-picker">
-            <header><div><strong>Người nhận</strong><small>Lead chưa gửi được xếp trước để tránh gửi trùng ngoài ý muốn.</small></div><span>{selectedIds.length}/10 đã chọn</span></header>
+            <header><div><strong>Người nhận</strong><small>Lead chưa gửi được xếp trước để tránh gửi trùng ngoài ý muốn.</small></div><span>{selectedIds.length}/{MAX_LEAD_EMAILS_PER_SEND} đã chọn</span></header>
             <div className="email-recipient-filters">
               <input aria-label="Tìm Lead nhận email" value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Gõ tên công ty, người liên hệ hoặc email..."/>
               <select aria-label="Lọc Lead theo nhóm ngành" value={recipientIndustry} onChange={(event) => setRecipientIndustry(event.target.value)}><option value="">Tất cả nhóm ngành</option>{recipientIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
               <select aria-label="Lọc Lead theo lịch sử gửi" value={recipientHistory} onChange={(event) => setRecipientHistory(event.target.value as "all" | "never" | "sent")}><option value="all">Tất cả lịch sử gửi</option><option value="never">Chưa gửi lần nào</option><option value="sent">Đã từng gửi</option></select>
             </div>
-            <div className="email-recipient-toolbar"><span>{eligibleLeads.length} công ty đang hiển thị</span><div><button type="button" onClick={chooseVisibleLeads}>Chọn tối đa 10</button><button type="button" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>Bỏ chọn</button></div></div>
+            <div className="email-recipient-toolbar"><span>{eligibleLeads.length} công ty đang hiển thị</span><div><button type="button" onClick={chooseVisibleLeads}>Chọn tối đa 50</button><button type="button" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>Bỏ chọn</button></div></div>
             <div className="email-recipient-list">{eligibleLeads.length === 0 ? <p>Không có Lead có email phù hợp.</p> : eligibleLeads.map((lead) => {
               const stat = leadSendStats.get(lead.id);
               const sentCount = Number(stat?.sentCount || 0);
