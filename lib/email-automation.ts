@@ -247,15 +247,15 @@ export const personalizeEmail = (
   return template.replace(/\{\{(companyName|contactName|salutation|title|industry|plantSite|targetDepartment|recommendedSolution)\}\}/g, (_, key: string) => values[key] || "");
 };
 
-async function connectionSettings(db: CrmDatabase) {
+async function connectionSettings(db: CrmDatabase, credentialKeyOverride?: string) {
   const row = await db.prepare(`SELECT from_email AS fromEmail, from_name AS fromName, username,
       smtp_host AS smtpHost, smtp_port AS smtpPort, smtp_security AS smtpSecurity,
       imap_host AS imapHost, imap_port AS imapPort, password_ciphertext AS passwordCiphertext,
       password_iv AS passwordIv FROM email_settings WHERE id = 'primary'`).first<EmailSettingsRow>();
-  if (!row || !row.passwordCiphertext || !row.passwordIv || !hasEmailCredentialKey()) {
+  if (!row || !row.passwordCiphertext || !row.passwordIv || !hasEmailCredentialKey(credentialKeyOverride)) {
     throw new Error("Vui lòng cấu hình tài khoản email trước khi bật tự động hóa.");
   }
-  return { settings: row, password: await decryptEmailPassword(row.passwordCiphertext, row.passwordIv) };
+  return { settings: row, password: await decryptEmailPassword(row.passwordCiphertext, row.passwordIv, credentialKeyOverride) };
 }
 
 export async function getAutomationSettings(db: CrmDatabase): Promise<EmailAutomationSettings> {
@@ -605,9 +605,9 @@ Viết tóm tắt và hành động đề xuất thật ngắn. Bản nháp tr�
   return fallback;
 }
 
-export async function syncAndClassifyReplies(db: CrmDatabase) {
+export async function syncAndClassifyReplies(db: CrmDatabase, credentialKeyOverride?: string) {
   const automation = await getAutomationSettings(db);
-  const { settings, password } = await connectionSettings(db);
+  const { settings, password } = await connectionSettings(db, credentialKeyOverride);
   const client = await ImapClient.open(settings, password);
   let messages;
   try {
@@ -727,7 +727,7 @@ async function completeFinishedCampaigns(db: CrmDatabase) {
     )`).bind(new Date().toISOString()).run();
 }
 
-export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" | "Manual", force = false) {
+export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" | "Manual", force = false, credentialKeyOverride?: string) {
   const runId = `RUN-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
   const startedAt = new Date().toISOString();
   await db.prepare(`INSERT INTO email_automation_runs (
@@ -744,7 +744,7 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
         .bind(skipped, new Date().toISOString(), runId).run();
       return { repliesAdded, sent, failed, skipped };
     }
-    const replyResult = await syncAndClassifyReplies(db);
+    const replyResult = await syncAndClassifyReplies(db, credentialKeyOverride);
     repliesAdded = replyResult.added;
     const local = vietnamNow();
     const inWorkingDay = !automation.weekdaysOnly || (local.weekday >= 1 && local.weekday <= 5);
@@ -796,7 +796,7 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
       return { repliesAdded, sent, failed, skipped };
     }
 
-    const { settings, password } = await connectionSettings(db);
+    const { settings, password } = await connectionSettings(db, credentialKeyOverride);
     const client = await SmtpClient.open(settings, password);
     const assetCache = new Map<string, Awaited<ReturnType<typeof storedCampaignAssets>>>();
     try {
