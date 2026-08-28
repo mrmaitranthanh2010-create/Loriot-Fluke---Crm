@@ -218,26 +218,37 @@ export function EmailAutomationPanel({
 
   const templates = data?.templates?.length ? data.templates : INDUSTRY_EMAIL_TEMPLATES;
 
-  const matchingLeadCount = (templateId: string) => leads.filter((lead) => {
-    const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
-    return Boolean(lead.email)
-      && !lead.emailOptOut
-      && lead.status !== "Không nhận email"
-      && lead.status !== "Đã chuyển cơ hội"
-      && sentCount === 0
-      && industryTemplateForLead(lead.industry)?.id === templateId;
-  }).length;
+  const matchingLeadIds = ({
+    groupId,
+    industry = "",
+    history = "never",
+    search = "",
+  }: {
+    groupId: string;
+    industry?: string;
+    history?: "all" | "never" | "sent";
+    search?: string;
+  }) => {
+    const query = normalize(search.trim());
+    const uniqueEmails = new Set<string>();
+    return leads.filter((lead) => {
+      const email = lead.email.trim().toLowerCase();
+      const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
+      if (!email || uniqueEmails.has(email) || lead.emailOptOut || lead.status === "Không nhận email" || lead.status === "Đã chuyển cơ hội") return false;
+      if (groupId && industryTemplateForLead(lead.industry)?.id !== groupId) return false;
+      if (industry && lead.industry !== industry) return false;
+      if (history === "never" && sentCount > 0) return false;
+      if (history === "sent" && sentCount === 0) return false;
+      if (query && !normalize(`${lead.companyName} ${lead.contactName} ${lead.email} ${lead.industry}`).includes(query)) return false;
+      uniqueEmails.add(email);
+      return true;
+    }).slice(0, 300).map((lead) => lead.id);
+  };
+
+  const matchingLeadCount = (templateId: string) => matchingLeadIds({ groupId: templateId }).length;
 
   const applyIndustryTemplate = (template: EmailIndustryTemplate) => {
-    const leadIds = leads.filter((lead) => {
-      const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
-      return Boolean(lead.email)
-        && !lead.emailOptOut
-        && lead.status !== "Không nhận email"
-        && lead.status !== "Đã chuyển cơ hội"
-        && sentCount === 0
-        && industryTemplateForLead(lead.industry)?.id === template.id;
-    }).slice(0, 300).map((lead) => lead.id);
+    const leadIds = matchingLeadIds({ groupId: template.id });
     setDraft({
       ...emptyCampaign(),
       name: `Chiến dịch Fluke – ${template.groupName}`,
@@ -273,6 +284,32 @@ export function EmailAutomationPanel({
   const chooseIndustryTemplate = (id: string) => {
     const template = industryTemplateById(id);
     if (template) applyIndustryTemplate(template);
+  };
+
+  const chooseDetailedIndustry = (industry: string) => {
+    setLeadIndustry(industry);
+    if (!leadIndustryGroup && !industry) return;
+    const leadIds = matchingLeadIds({
+      groupId: leadIndustryGroup,
+      industry,
+      history: leadHistory,
+      search: leadSearch,
+    });
+    setDraft((current) => ({ ...current, leadIds }));
+    setFormError(leadIds.length ? "" : "Ngành này chưa có địa chỉ email phù hợp với điều kiện đang lọc.");
+  };
+
+  const chooseLeadHistory = (history: "all" | "never" | "sent") => {
+    setLeadHistory(history);
+    if (!leadIndustryGroup && !leadIndustry) return;
+    const leadIds = matchingLeadIds({
+      groupId: leadIndustryGroup,
+      industry: leadIndustry,
+      history,
+      search: leadSearch,
+    });
+    setDraft((current) => ({ ...current, leadIds }));
+    setFormError(leadIds.length ? "" : "Không có địa chỉ email phù hợp với ngành và lịch sử gửi đã chọn.");
   };
 
   const updateSequenceStep = (index: number, values: Partial<EmailSequenceStep>) => {
@@ -473,14 +510,15 @@ export function EmailAutomationPanel({
 
           <aside className="campaign-form-side">
             <section className="campaign-recipient-select">
-              <header><div><strong>Lead nhận email</strong><small>Lọc theo ngành và lịch sử gửi · tối đa 300 Lead</small></div><span>{draft.leadIds.length} đã chọn</span></header>
+              <header><div><strong>Email/Lead nhận chiến dịch</strong><small>Tự chọn theo ngành · loại email trùng · tối đa 300 địa chỉ</small></div><span>{draft.leadIds.length} đã chọn</span></header>
               <div className="campaign-recipient-filters">
                 <input aria-label="Tìm Lead trong chiến dịch" value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Tìm công ty, email, ngành..."/>
-                <select aria-label="Lọc Lead theo bộ mẫu ngành" value={leadIndustryGroup} onChange={(event) => setLeadIndustryGroup(event.target.value)}><option value="">Tất cả 6 nhóm ngành</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.groupName}</option>)}</select>
-                <select aria-label="Lọc ngành chi tiết cho chiến dịch" value={leadIndustry} onChange={(event) => setLeadIndustry(event.target.value)}><option value="">Tất cả ngành chi tiết</option>{leadIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
-                <select aria-label="Lọc lịch sử gửi cho chiến dịch" value={leadHistory} onChange={(event) => setLeadHistory(event.target.value as "all" | "never" | "sent")}><option value="all">Tất cả lịch sử</option><option value="never">Chưa gửi lần nào</option><option value="sent">Đã từng gửi</option></select>
+                <select aria-label="Lọc Lead theo bộ mẫu ngành" value={leadIndustryGroup} onChange={(event) => chooseIndustryTemplate(event.target.value)}><option value="">Tất cả 6 nhóm ngành</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.groupName}</option>)}</select>
+                <select aria-label="Lọc ngành chi tiết cho chiến dịch" value={leadIndustry} onChange={(event) => chooseDetailedIndustry(event.target.value)}><option value="">Tất cả ngành chi tiết</option>{leadIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
+                <select aria-label="Lọc lịch sử gửi cho chiến dịch" value={leadHistory} onChange={(event) => chooseLeadHistory(event.target.value as "all" | "never" | "sent")}><option value="all">Tất cả lịch sử</option><option value="never">Chưa gửi lần nào</option><option value="sent">Đã từng gửi</option></select>
               </div>
-              <div className="campaign-recipient-toolbar"><span>{eligibleLeads.length} công ty</span><div><button type="button" onClick={() => setDraft({ ...draft, leadIds: eligibleLeads.slice(0, 300).map((lead) => lead.id) })}>Chọn nhóm đang hiển thị</button><button type="button" onClick={() => setDraft({ ...draft, leadIds: [] })} disabled={!draft.leadIds.length}>Bỏ chọn</button></div></div>
+              {draft.industryTemplateId && <div className={`recipient-auto-selected ${draft.leadIds.length ? "success" : "empty"}`}><strong>{draft.leadIds.length ? `✓ Đã tự chọn ${draft.leadIds.length} địa chỉ email` : "Chưa có email phù hợp"}</strong><span>{draft.leadIds.length ? `Đúng nhóm ${draft.industryGroup}; anh vẫn có thể bỏ tích từng công ty.` : "Lead thiếu email, đã gửi, opt-out hoặc đã vào cơ hội sẽ không được chọn."}</span></div>}
+              <div className="campaign-recipient-toolbar"><span>{eligibleLeads.length} công ty phù hợp</span><div><button type="button" onClick={() => setDraft({ ...draft, leadIds: matchingLeadIds({ groupId: leadIndustryGroup, industry: leadIndustry, history: leadHistory, search: leadSearch }) })}>Chọn nhóm đang hiển thị</button><button type="button" onClick={() => setDraft({ ...draft, leadIds: [] })} disabled={!draft.leadIds.length}>Bỏ chọn</button></div></div>
               <div className="campaign-recipient-list">{eligibleLeads.map((lead) => {
                 const stat = sendStatsByLead.get(lead.id);
                 const sentCount = Number(stat?.sentCount || 0);

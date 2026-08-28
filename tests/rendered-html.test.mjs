@@ -457,12 +457,17 @@ test("ships six industry mail libraries with four-step Lead automation", async (
   assert.match(panel, /Dùng bộ mẫu/);
   assert.match(panel, /industryTemplateForLead\(lead\.industry\)/);
   assert.match(panel, /sequenceSteps: template\.steps\.map/);
+  assert.match(panel, /chooseDetailedIndustry/);
+  assert.match(panel, /chooseLeadHistory/);
+  assert.match(panel, /Đã tự chọn \$\{draft\.leadIds\.length\} địa chỉ email/);
+  assert.match(panel, /uniqueEmails\.has\(email\)/);
   assert.match(automation, /c\.sequence_json AS sequenceJson/);
   assert.match(automation, /const nextStepIndex = currentStepIndex \+ 1/);
   assert.match(automation, /status IN \('Queued','Awaiting'\)/);
   assert.match(database, /sequence_json TEXT NOT NULL DEFAULT '\[\]'/);
   assert.match(schema, /sequenceJson: text\("sequence_json"\)/);
   assert.match(styles, /\.email-template-library/);
+  assert.match(styles, /\.recipient-auto-selected\.success/);
 });
 
 test("connects the company mailbox and records personalized Lead outreach", async () => {
