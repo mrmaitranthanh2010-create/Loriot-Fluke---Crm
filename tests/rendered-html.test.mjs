@@ -427,6 +427,10 @@ test("ships the guarded AI campaign center for phase four", async () => {
   assert.match(panel, /✓ Đã gửi \$\{sent\} email/);
   assert.match(panel, /Không có email được gửi/);
   assert.match(panel, /lastRunSummary/);
+  assert.match(panel, /CHIẾN DỊCH CỦA ANH/);
+  assert.match(panel, /Quản lý & kích hoạt/);
+  assert.match(panel, /Kích hoạt chiến dịch/);
+  assert.ok(panel.indexOf("campaign-command-center") < panel.indexOf("email-template-library"));
   assert.match(automationApi, /action === "draftCampaignWithAi"/);
   assert.match(automationApi, /action === "runNow"/);
   assert.match(automation, /dailyLimit/);
@@ -440,6 +444,8 @@ test("ships the guarded AI campaign center for phase four", async () => {
   assert.match(schema, /emailCampaignRecipients/);
   assert.match(schema, /emailAutomationRuns/);
   assert.match(worker, /async scheduled/);
+  assert.match(worker, /env\.MAIL_CREDENTIAL_KEY/);
+  assert.match(automation, /credentialKeyOverride/);
   assert.match(vite, /ai: \{ binding: "AI" \}/);
   assert.match(vite, /crons: \["\*\/15 \* \* \* \*"\]/);
 });
