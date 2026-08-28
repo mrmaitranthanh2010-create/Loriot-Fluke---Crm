@@ -456,6 +456,23 @@ export function EmailAutomationPanel({
           : !analytics.activeCampaigns
             ? "Không gửi · chưa có chiến dịch đang chạy"
             : "Đã kiểm tra lịch · chưa có email đến hạn";
+  const campaigns = data?.campaigns || [];
+  const activeCampaignCount = campaigns.filter((campaign) => campaign.status === "Active").length;
+  const draftCampaignCount = campaigns.filter((campaign) => campaign.status === "Draft").length;
+  const pausedCampaignCount = campaigns.filter((campaign) => campaign.status === "Paused").length;
+  const orderedCampaigns = [...campaigns].sort((left, right) => {
+    const rank = { Draft: 0, Paused: 1, Active: 2, Completed: 3 } as const;
+    return rank[left.status] - rank[right.status] || right.updatedAt.localeCompare(left.updatedAt);
+  });
+  const campaignGuidance = !data?.automation.enabled
+    ? "Bật tự động hóa và lưu vận hành trước khi kích hoạt chiến dịch."
+    : draftCampaignCount > 0
+      ? `Có ${draftCampaignCount} chiến dịch Bản nháp cần kiểm tra và kích hoạt.`
+      : pausedCampaignCount > 0
+        ? `Có ${pausedCampaignCount} chiến dịch đang tạm dừng; kích hoạt lại khi sẵn sàng.`
+        : activeCampaignCount > 0
+          ? `${activeCampaignCount} chiến dịch đang chạy; hệ thống sẽ gửi theo lịch đã cài đặt.`
+          : "Chưa có chiến dịch hoạt động. Tạo mới từ kho mẫu email bên dưới.";
 
   return <>
     <section className={`automation-center panel ${data?.automation.enabled ? "is-enabled" : ""}`}>
@@ -489,6 +506,39 @@ export function EmailAutomationPanel({
       </div>}
       <div className={`automation-last-run ${analytics?.lastRunSent ? "is-sent" : ""}`}>Lần chạy gần nhất: <strong>{displayTime(analytics?.lastRunAt || "")}</strong> · {lastRunSummary}</div>
 
+      <section className="campaign-command-center" aria-label="Quản lý và kích hoạt chiến dịch">
+        <header className="campaign-command-header">
+          <div><span>CHIẾN DỊCH CỦA ANH</span><strong>Quản lý & kích hoạt</strong><small>Chiến dịch cần xử lý luôn nằm tại đây, không phải cuộn qua kho mẫu.</small></div>
+          <div className="campaign-command-summary">
+            <span className="is-active"><b>{activeCampaignCount}</b> đang chạy</span>
+            <span className={draftCampaignCount ? "needs-action" : ""}><b>{draftCampaignCount}</b> bản nháp</span>
+            <button className="secondary-button" disabled={!data || busy} onClick={openCampaign}>＋ Tạo mới</button>
+          </div>
+        </header>
+        <div className={`campaign-guidance ${draftCampaignCount || pausedCampaignCount || !data?.automation.enabled ? "needs-action" : "is-ready"}`}>
+          <span>{draftCampaignCount || pausedCampaignCount || !data?.automation.enabled ? "BƯỚC TIẾP THEO" : "TRẠNG THÁI"}</span>
+          <strong>{campaignGuidance}</strong>
+        </div>
+        <div className="campaign-list">
+          {!orderedCampaigns.length ? <div className="automation-empty"><strong>Chưa có chiến dịch</strong><span>Chọn “Tạo mới” hoặc dùng một bộ mẫu ngành ở bên dưới.</span></div> : orderedCampaigns.map((campaign, index) => {
+            const replyRate = campaign.sentRecipients ? campaign.repliedRecipients / campaign.sentRecipients : 0;
+            const stateNote = campaign.status === "Draft" ? "Chưa gửi · cần kích hoạt"
+              : campaign.status === "Paused" ? "Đang tạm dừng"
+                : campaign.status === "Active" ? "Đang vận hành theo lịch" : "Đã hoàn thành chuỗi email";
+            return <article key={campaign.id} className={`campaign-card status-${campaign.status.toLowerCase()}`}>
+              <div className="campaign-index">{String(index + 1).padStart(2, "0")}</div>
+              <div className="campaign-main"><div><span className={`campaign-status ${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span><strong>{campaign.name}</strong></div><p>{campaign.objective}</p><small>{stateNote} · Bắt đầu {displayDate(campaign.startDate)} · {campaign.industryGroup ? `${campaign.industryGroup} · ` : ""}{campaign.sequenceSteps.length || (campaign.followUpEnabled ? 2 : 1)} email</small></div>
+              <div className="campaign-stats"><span><b>{campaign.totalRecipients}</b> Lead</span><span><b>{campaign.sentRecipients}</b> đã gửi</span><span><b>{campaign.repliedRecipients}</b> phản hồi</span><span><b>{(replyRate * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%</b> tỷ lệ</span></div>
+              <div className="campaign-actions">
+                {campaign.status !== "Active" && campaign.status !== "Completed" && <button className="primary-button campaign-activate" disabled={busy} onClick={() => void changeCampaignStatus(campaign, "Active")}>Kích hoạt chiến dịch</button>}
+                {campaign.status === "Active" && <button className="secondary-button" disabled={busy} onClick={() => void changeCampaignStatus(campaign, "Paused")}>Tạm dừng</button>}
+                {campaign.status !== "Active" && <button className="campaign-delete" disabled={busy} onClick={() => void removeCampaign(campaign)} aria-label={`Xóa ${campaign.name}`}>×</button>}
+              </div>
+            </article>;
+          })}
+        </div>
+      </section>
+
       <section className="email-template-library">
         <header className="template-library-header">
           <div><span>KHO MAIL THEO NHÓM NGÀNH</span><strong>6 bộ mẫu · 24 email cá nhân hóa</strong><small>Chọn một nhóm để nạp 4 email và tự chọn các Lead mới có email thuộc đúng ngành.</small></div>
@@ -506,21 +556,6 @@ export function EmailAutomationPanel({
         })}</div>
       </section>
 
-      <div className="campaign-list">
-        {!data?.campaigns.length ? <div className="automation-empty"><strong>Chưa có chiến dịch</strong><span>Tạo một chiến dịch, kiểm tra nội dung rồi mới kích hoạt lịch gửi.</span></div> : data.campaigns.map((campaign, index) => {
-          const replyRate = campaign.sentRecipients ? campaign.repliedRecipients / campaign.sentRecipients : 0;
-          return <article key={campaign.id} className={`campaign-card status-${campaign.status.toLowerCase()}`}>
-            <div className="campaign-index">{String(index + 1).padStart(2, "0")}</div>
-            <div className="campaign-main"><div><span className={`campaign-status ${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span><strong>{campaign.name}</strong></div><p>{campaign.objective}</p><small>Bắt đầu {displayDate(campaign.startDate)} · {campaign.industryGroup ? `${campaign.industryGroup} · ` : ""}{campaign.sequenceSteps.length || (campaign.followUpEnabled ? 2 : 1)} email</small></div>
-            <div className="campaign-stats"><span><b>{campaign.totalRecipients}</b> Lead</span><span><b>{campaign.sentRecipients}</b> đã gửi</span><span><b>{campaign.repliedRecipients}</b> phản hồi</span><span><b>{(replyRate * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%</b> tỷ lệ</span></div>
-            <div className="campaign-actions">
-              {campaign.status !== "Active" && campaign.status !== "Completed" && <button className="primary-button" disabled={busy} onClick={() => void changeCampaignStatus(campaign, "Active")}>Kích hoạt</button>}
-              {campaign.status === "Active" && <button className="secondary-button" disabled={busy} onClick={() => void changeCampaignStatus(campaign, "Paused")}>Tạm dừng</button>}
-              {campaign.status !== "Active" && <button className="campaign-delete" disabled={busy} onClick={() => void removeCampaign(campaign)} aria-label={`Xóa ${campaign.name}`}>×</button>}
-            </div>
-          </article>;
-        })}
-      </div>
     </section>
 
     {campaignOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCampaignOpen(false); }}>

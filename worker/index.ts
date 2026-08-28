@@ -6,6 +6,7 @@ type HandlerContext = NonNullable<Parameters<typeof handler.fetch>[2]>;
 interface Env extends HandlerEnv {
   CRM_AUTH_USERNAME?: string;
   CRM_AUTH_PASSWORD?: string;
+  MAIL_CREDENTIAL_KEY?: string;
 }
 
 type ScheduledEvent = { cron: string };
@@ -63,14 +64,14 @@ const worker = {
 
     return handler.fetch(request, env, ctx);
   },
-  async scheduled(controller: ScheduledEvent): Promise<void> {
+  async scheduled(controller: ScheduledEvent, env: Env): Promise<void> {
     try {
       const [{ ensureDatabase }, { runEmailAutomation }] = await Promise.all([
         import("@/db"),
         import("@/lib/email-automation"),
       ]);
       const db = await ensureDatabase();
-      const result = await runEmailAutomation(db, "Scheduled");
+      const result = await runEmailAutomation(db, "Scheduled", false, env.MAIL_CREDENTIAL_KEY);
       console.log(JSON.stringify({
         message: "scheduled email automation completed",
         cron: controller.cron,
