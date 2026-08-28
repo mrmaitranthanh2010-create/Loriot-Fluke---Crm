@@ -739,9 +739,10 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
   try {
     const automation = await getAutomationSettings(db);
     if (!automation.enabled) {
-      await db.prepare(`UPDATE email_automation_runs SET status = 'Completed', completed_at = ? WHERE id = ?`)
-        .bind(new Date().toISOString(), runId).run();
-      return { repliesAdded, sent, failed, skipped: "Tự động hóa đang tắt." };
+      const skipped = "Tự động hóa đang tắt.";
+      await db.prepare(`UPDATE email_automation_runs SET status = 'Completed', error_message = ?, completed_at = ? WHERE id = ?`)
+        .bind(skipped, new Date().toISOString(), runId).run();
+      return { repliesAdded, sent, failed, skipped };
     }
     const replyResult = await syncAndClassifyReplies(db);
     repliesAdded = replyResult.added;
@@ -749,9 +750,11 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
     const inWorkingDay = !automation.weekdaysOnly || (local.weekday >= 1 && local.weekday <= 5);
     const inWindow = local.hour >= automation.sendStartHour && local.hour < automation.sendEndHour;
     if (!force && (!inWorkingDay || !inWindow)) {
+      const skipped = "Ngoài khung giờ gửi đã cấu hình.";
       await db.prepare(`UPDATE email_automation_runs SET status = 'Completed', replies_added = ?,
-        completed_at = ? WHERE id = ?`).bind(repliesAdded, new Date().toISOString(), runId).run();
-      return { repliesAdded, sent, failed, skipped: "Ngoài khung giờ gửi đã cấu hình." };
+        error_message = ?, completed_at = ? WHERE id = ?`)
+        .bind(repliesAdded, skipped, new Date().toISOString(), runId).run();
+      return { repliesAdded, sent, failed, skipped };
     }
 
     const sentTodayRow = await db.prepare(`SELECT COUNT(*) AS count FROM email_messages
@@ -759,9 +762,11 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
       AND date(datetime(sent_at, '+7 hours')) = ?`).bind(local.date).first<{ count: number }>();
     const remaining = Math.max(0, automation.dailyLimit - Number(sentTodayRow?.count || 0));
     if (!remaining) {
+      const skipped = "Đã đạt giới hạn gửi email trong ngày.";
       await db.prepare(`UPDATE email_automation_runs SET status = 'Completed', replies_added = ?,
-        completed_at = ? WHERE id = ?`).bind(repliesAdded, new Date().toISOString(), runId).run();
-      return { repliesAdded, sent, failed, skipped: "Đã đạt giới hạn gửi email trong ngày." };
+        error_message = ?, completed_at = ? WHERE id = ?`)
+        .bind(repliesAdded, skipped, new Date().toISOString(), runId).run();
+      return { repliesAdded, sent, failed, skipped };
     }
 
     const limit = Math.min(remaining, automation.batchSize);
@@ -784,9 +789,11 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
     const recipients = queue.results ?? [];
     if (!recipients.length) {
       await completeFinishedCampaigns(db);
+      const skipped = "Chưa có Lead đến thời điểm gửi.";
       await db.prepare(`UPDATE email_automation_runs SET status = 'Completed', replies_added = ?,
-        completed_at = ? WHERE id = ?`).bind(repliesAdded, new Date().toISOString(), runId).run();
-      return { repliesAdded, sent, failed, skipped: "Chưa có Lead đến thời điểm gửi." };
+        error_message = ?, completed_at = ? WHERE id = ?`)
+        .bind(repliesAdded, skipped, new Date().toISOString(), runId).run();
+      return { repliesAdded, sent, failed, skipped };
     }
 
     const { settings, password } = await connectionSettings(db);
@@ -864,9 +871,10 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
       await client.close();
     }
     await completeFinishedCampaigns(db);
+    const resultMessage = failed ? `${failed} email gửi thất bại.` : "";
     await db.prepare(`UPDATE email_automation_runs SET status = 'Completed', replies_added = ?,
-      sent_count = ?, failed_count = ?, completed_at = ? WHERE id = ?`)
-      .bind(repliesAdded, sent, failed, new Date().toISOString(), runId).run();
+      sent_count = ?, failed_count = ?, error_message = ?, completed_at = ? WHERE id = ?`)
+      .bind(repliesAdded, sent, failed, resultMessage, new Date().toISOString(), runId).run();
     return { repliesAdded, sent, failed };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Không thể chạy tự động hóa email.";
@@ -888,8 +896,19 @@ export async function getAutomationAnalytics(db: CrmDatabase): Promise<EmailAuto
     db.prepare("SELECT COUNT(*) AS count FROM prospecting_leads WHERE converted_opportunity_id <> ''").first<{ count: number }>(),
     db.prepare("SELECT COUNT(*) AS count FROM email_campaigns WHERE status = 'Active'").first<{ count: number }>(),
     db.prepare("SELECT COUNT(*) AS count FROM email_campaign_recipients WHERE status IN ('Queued','Awaiting')").first<{ count: number }>(),
-    db.prepare(`SELECT status, completed_at AS completedAt, started_at AS startedAt
-      FROM email_automation_runs ORDER BY started_at DESC LIMIT 1`).first<{ status: string; completedAt: string; startedAt: string }>(),
+    db.prepare(`SELECT status, run_type AS runType, replies_added AS repliesAdded,
+      sent_count AS sentCount, failed_count AS failedCount, error_message AS message,
+      completed_at AS completedAt, started_at AS startedAt
+      FROM email_automation_runs ORDER BY started_at DESC LIMIT 1`).first<{
+        status: string;
+        runType: string;
+        repliesAdded: number;
+        sentCount: number;
+        failedCount: number;
+        message: string;
+        completedAt: string;
+        startedAt: string;
+      }>(),
   ]);
   const totalSent = Number(sentTotal?.count || 0);
   const totalSentLeads = Number(sentLeadTotal?.count || 0);
@@ -904,6 +923,11 @@ export async function getAutomationAnalytics(db: CrmDatabase): Promise<EmailAuto
     queuedRecipients: Number(queued?.count || 0),
     lastRunAt: lastRun?.completedAt || lastRun?.startedAt || "",
     lastRunStatus: lastRun?.status || "Chưa chạy",
+    lastRunType: lastRun?.runType || "",
+    lastRunSent: Number(lastRun?.sentCount || 0),
+    lastRunFailed: Number(lastRun?.failedCount || 0),
+    lastRunRepliesAdded: Number(lastRun?.repliesAdded || 0),
+    lastRunMessage: lastRun?.message || "",
   };
 }
 
