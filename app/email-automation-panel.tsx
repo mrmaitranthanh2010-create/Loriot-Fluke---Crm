@@ -38,6 +38,11 @@ type CampaignDraft = {
   assetIds: string[];
 };
 
+type RunButtonState = {
+  tone: "sent" | "idle" | "failed";
+  label: string;
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const emptyCampaign = (): CampaignDraft => ({
@@ -120,6 +125,7 @@ export function EmailAutomationPanel({
   const [feedback, setFeedback] = useState("");
   const [isError, setIsError] = useState(false);
   const [formError, setFormError] = useState("");
+  const [runButtonState, setRunButtonState] = useState<RunButtonState | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -171,15 +177,27 @@ export function EmailAutomationPanel({
     }
     if (!window.confirm("Chạy lịch ngay có thể gửi email cho các Lead đang đến hạn. Anh xác nhận tiếp tục?")) return;
     setBusy(true);
+    setRunButtonState(null);
     try {
       const next = await automationRequest({ action: "runNow" });
       updatePayload(next);
       const sent = Number(next.result?.sent || 0);
+      const failed = Number(next.result?.failed || 0);
       const replies = Number(next.result?.repliesAdded || 0);
       const skipped = typeof next.result?.skipped === "string" ? next.result.skipped : "";
-      showFeedback(skipped || `Đã gửi ${sent} email và ghi nhận ${replies} phản hồi mới.`);
+      if (sent > 0) {
+        setRunButtonState({ tone: "sent", label: `✓ Đã gửi ${sent} email` });
+        showFeedback(`Đã gửi ${sent} email${failed ? `; ${failed} email lỗi` : ""} và ghi nhận ${replies} phản hồi mới.`, failed > 0);
+      } else if (failed > 0) {
+        setRunButtonState({ tone: "failed", label: `⚠ ${failed} email gửi lỗi` });
+        showFeedback(`${failed} email gửi thất bại. Hãy kiểm tra nhật ký gửi bên dưới.`, true);
+      } else {
+        setRunButtonState({ tone: "idle", label: "Không có email được gửi" });
+        showFeedback(`Không có email được gửi. ${skipped || "Chưa có Lead đến hạn."}`, true);
+      }
       await onChanged();
     } catch (error) {
+      setRunButtonState({ tone: "failed", label: "Chạy lịch thất bại" });
       showFeedback(error instanceof Error ? error.message : "Không thể chạy lịch email.", true);
     } finally {
       setBusy(false);
@@ -397,6 +415,7 @@ export function EmailAutomationPanel({
     try {
       const next = await automationRequest({ action: "setCampaignStatus", id: campaign.id, status });
       updatePayload(next);
+      setRunButtonState(null);
       showFeedback(status === "Active" ? "Đã kích hoạt chiến dịch." : "Đã tạm dừng chiến dịch.");
     } catch (error) {
       showFeedback(error instanceof Error ? error.message : "Không thể đổi trạng thái chiến dịch.", true);
@@ -420,6 +439,23 @@ export function EmailAutomationPanel({
   };
 
   const analytics = data?.analytics;
+  const runBlockedLabel = !data?.automation.enabled
+    ? "Bật tự động hóa trước"
+    : !analytics?.activeCampaigns
+      ? "Kích hoạt chiến dịch trước"
+      : "";
+  const runButtonLabel = busy ? "Đang xử lý..." : runBlockedLabel || runButtonState?.label || "Chạy lịch ngay";
+  const lastRunSummary = !analytics?.lastRunAt
+    ? "Chưa chạy"
+    : analytics.lastRunStatus === "Failed"
+      ? `Thất bại${analytics.lastRunMessage ? ` · ${analytics.lastRunMessage}` : ""}`
+      : analytics.lastRunSent > 0
+        ? `Đã gửi ${analytics.lastRunSent} email${analytics.lastRunFailed ? ` · ${analytics.lastRunFailed} lỗi` : ""}`
+        : analytics.lastRunMessage
+          ? `Không gửi · ${analytics.lastRunMessage}`
+          : !analytics.activeCampaigns
+            ? "Không gửi · chưa có chiến dịch đang chạy"
+            : "Đã kiểm tra lịch · chưa có email đến hạn";
 
   return <>
     <section className={`automation-center panel ${data?.automation.enabled ? "is-enabled" : ""}`}>
@@ -428,7 +464,7 @@ export function EmailAutomationPanel({
         <div className="automation-header-actions">
           <span className={`automation-master-state ${data?.automation.enabled ? "on" : "off"}`}>{data?.automation.enabled ? "ĐANG BẬT" : "ĐANG TẮT"}</span>
           <button className="secondary-button" disabled={!data || busy} onClick={openCampaign}>＋ Tạo chiến dịch</button>
-          <button className="primary-button" disabled={!data?.automation.enabled || busy} onClick={() => void runNow()}>{busy ? "Đang xử lý..." : "Chạy lịch ngay"}</button>
+          <button className={`primary-button run-now-button ${runButtonState ? `is-${runButtonState.tone}` : ""}`} disabled={Boolean(runBlockedLabel) || busy} onClick={() => void runNow()}>{runButtonLabel}</button>
         </div>
       </header>
 
@@ -451,7 +487,7 @@ export function EmailAutomationPanel({
         <label className="automation-check"><input type="checkbox" checked={settings.autoClassifyReplies} onChange={(event) => setSettings({ ...settings, autoClassifyReplies: event.target.checked })}/><span>AI phân loại phản hồi</span></label>
         <button className="secondary-button" disabled={busy} onClick={() => void saveSettings()}>Lưu vận hành</button>
       </div>}
-      <div className="automation-last-run">Lần chạy gần nhất: <strong>{displayTime(analytics?.lastRunAt || "")}</strong> · {analytics?.lastRunStatus || "Chưa chạy"}</div>
+      <div className={`automation-last-run ${analytics?.lastRunSent ? "is-sent" : ""}`}>Lần chạy gần nhất: <strong>{displayTime(analytics?.lastRunAt || "")}</strong> · {lastRunSummary}</div>
 
       <section className="email-template-library">
         <header className="template-library-header">
