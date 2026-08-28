@@ -57,21 +57,21 @@ const base64ToBytes = (value: string) => {
 
 const utf8Base64 = (value: string) => bytesToBase64(encoder.encode(value));
 
-const credentialSecret = () => {
-  const value = env.MAIL_CREDENTIAL_KEY;
+const credentialSecret = (override?: string) => {
+  const value = override || env.MAIL_CREDENTIAL_KEY;
   if (typeof value !== "string" || value.trim().length < 24) {
     throw new Error("CRM chưa được cấu hình khóa bảo mật cho tài khoản email.");
   }
   return value.trim();
 };
 
-export const hasEmailCredentialKey = () => {
-  const value = env.MAIL_CREDENTIAL_KEY;
+export const hasEmailCredentialKey = (override?: string) => {
+  const value = override || env.MAIL_CREDENTIAL_KEY;
   return typeof value === "string" && value.trim().length >= 24;
 };
 
-async function credentialKey() {
-  const secret = credentialSecret();
+async function credentialKey(override?: string) {
+  const secret = credentialSecret(override);
   let keyBytes: Uint8Array;
   try {
     const decoded = base64ToBytes(secret);
@@ -98,10 +98,10 @@ export async function encryptEmailPassword(password: string) {
   };
 }
 
-export async function decryptEmailPassword(passwordCiphertext: string, passwordIv: string) {
+export async function decryptEmailPassword(passwordCiphertext: string, passwordIv: string, credentialKeyOverride?: string) {
   if (!passwordCiphertext || !passwordIv) throw new Error("Tài khoản email chưa có mật khẩu kết nối.");
   try {
-    const key = await credentialKey();
+    const key = await credentialKey(credentialKeyOverride);
     const plaintext = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: base64ToBytes(passwordIv) },
       key,
