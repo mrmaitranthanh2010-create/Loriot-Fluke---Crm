@@ -191,6 +191,11 @@ export type EmailAutomationAnalytics = {
   queuedRecipients: number;
   lastRunAt: string;
   lastRunStatus: string;
+  lastRunType: string;
+  lastRunSent: number;
+  lastRunFailed: number;
+  lastRunRepliesAdded: number;
+  lastRunMessage: string;
 };
 
 export type Opportunity = {
