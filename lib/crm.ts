@@ -167,6 +167,9 @@ export type EmailCampaign = {
   followUpDelayDays: number;
   followUpSubjectTemplate: string;
   followUpBodyTemplate: string;
+  industryTemplateId: string;
+  industryGroup: string;
+  sequenceSteps: import("@/lib/industry-email-templates").EmailSequenceStep[];
   assetIds: string[];
   totalRecipients: number;
   queuedRecipients: number;

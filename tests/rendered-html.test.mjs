@@ -438,6 +438,33 @@ test("ships the guarded AI campaign center for phase four", async () => {
   assert.match(vite, /crons: \["\*\/15 \* \* \* \*"\]/);
 });
 
+test("ships six industry mail libraries with four-step Lead automation", async () => {
+  const [panel, automation, templates, database, schema, styles] = await Promise.all([
+    readFile(new URL("../app/email-automation-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/email-automation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/industry-email-templates.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  for (const group of ["Electronics/Semiconductor", "Automotive", "Steel/Cement", "F&B", "Power/Solar", "Oil & Gas/Chemical"]) {
+    assert.match(templates, new RegExp(group.replace(/[&/]/g, ".")));
+  }
+  assert.equal((templates.match(/step\(1, "Tiếp cận ban đầu"/g) || []).length, 6);
+  assert.equal((templates.match(/step\(4, "Xác nhận cuối"/g) || []).length, 6);
+  assert.match(panel, /KHO MAIL THEO NHÓM NGÀNH/);
+  assert.match(panel, /6 bộ mẫu · 24 email cá nhân hóa/);
+  assert.match(panel, /Dùng bộ mẫu/);
+  assert.match(panel, /industryTemplateForLead\(lead\.industry\)/);
+  assert.match(panel, /sequenceSteps: template\.steps\.map/);
+  assert.match(automation, /c\.sequence_json AS sequenceJson/);
+  assert.match(automation, /const nextStepIndex = currentStepIndex \+ 1/);
+  assert.match(automation, /status IN \('Queued','Awaiting'\)/);
+  assert.match(database, /sequence_json TEXT NOT NULL DEFAULT '\[\]'/);
+  assert.match(schema, /sequenceJson: text\("sequence_json"\)/);
+  assert.match(styles, /\.email-template-library/);
+});
+
 test("connects the company mailbox and records personalized Lead outreach", async () => {
   const [panel, emailApi, emailFileApi, emailAssets, emailServer, emailBranding, database, workerConfig] = await Promise.all([
     readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),

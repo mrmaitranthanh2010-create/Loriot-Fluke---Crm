@@ -10,6 +10,11 @@ import {
 } from "@/lib/email-server";
 import { loriotEmailContent } from "@/lib/email-branding";
 import {
+  INDUSTRY_EMAIL_TEMPLATES,
+  industryTemplateById,
+  type EmailSequenceStep,
+} from "@/lib/industry-email-templates";
+import {
   emailFilesBucket,
   findEmailAssets,
   MAX_EMAIL_ASSETS,
@@ -59,6 +64,9 @@ type CampaignRow = {
   followUpDelayDays: number;
   followUpSubjectTemplate: string;
   followUpBodyTemplate: string;
+  industryTemplateId: string;
+  industryGroup: string;
+  sequenceJson: string;
   assetIdsJson: string;
   totalRecipients: number;
   queuedRecipients: number;
@@ -83,11 +91,13 @@ type QueuedRecipient = {
   followUpDelayDays: number;
   followUpSubjectTemplate: string;
   followUpBodyTemplate: string;
+  sequenceJson: string;
   assetIdsJson: string;
   companyName: string;
   contactName: string;
   title: string;
   industry: string;
+  notes: string;
   email: string;
 };
 
@@ -144,6 +154,52 @@ const safeJsonArray = (value: string) => {
   }
 };
 
+const validSequenceStep = (value: unknown): value is EmailSequenceStep => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const step = value as Record<string, unknown>;
+  return Number.isFinite(Number(step.order))
+    && typeof step.label === "string"
+    && Number.isFinite(Number(step.delayDays))
+    && typeof step.subjectTemplate === "string"
+    && typeof step.bodyTemplate === "string";
+};
+
+const safeSequence = (value: unknown): EmailSequenceStep[] => {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(validSequenceStep).slice(0, 4).map((step, index) => ({
+    order: index + 1,
+    label: String(step.label).slice(0, 120),
+    delayDays: index === 0 ? 0 : clampInt(Number(step.delayDays), 1, 30),
+    subjectTemplate: String(step.subjectTemplate).trim().slice(0, 500),
+    bodyTemplate: String(step.bodyTemplate).trim().slice(0, 12_000),
+  })).filter((step) => step.subjectTemplate && step.bodyTemplate);
+};
+
+const legacySequence = (recipient: QueuedRecipient): EmailSequenceStep[] => safeSequence([
+  {
+    order: 1,
+    label: "Tiếp cận ban đầu",
+    delayDays: 0,
+    subjectTemplate: recipient.subjectTemplate,
+    bodyTemplate: recipient.bodyTemplate,
+  },
+  ...(recipient.followUpEnabled ? [{
+    order: 2,
+    label: "Follow-up",
+    delayDays: recipient.followUpDelayDays,
+    subjectTemplate: recipient.followUpSubjectTemplate,
+    bodyTemplate: recipient.followUpBodyTemplate,
+  }] : []),
+]);
+
 const vietnamNow = (date = new Date()) => {
   const local = new Date(date.getTime() + 7 * 60 * 60 * 1_000);
   return {
@@ -172,16 +228,23 @@ const tomorrow = () => {
 
 export const personalizeEmail = (
   template: string,
-  lead: Pick<Lead, "companyName" | "contactName" | "title" | "industry">,
+  lead: Pick<Lead, "companyName" | "contactName" | "title" | "industry" | "notes">,
 ) => {
+  const noteValue = (label: string) => lead.notes
+    .split("\n")
+    .find((line) => line.trim().toLowerCase().startsWith(`${label.toLowerCase()}:`))
+    ?.split(":").slice(1).join(":").trim() || "";
   const values: Record<string, string> = {
     companyName: lead.companyName || "Quý Công ty",
     contactName: lead.contactName || "Anh/Chị",
     salutation: lead.contactName || "Quý Anh/Chị",
     title: lead.title || "bộ phận kỹ thuật",
     industry: lead.industry || "sản xuất công nghiệp",
+    plantSite: noteValue("Nhà máy/Site") || lead.companyName || "nhà máy",
+    targetDepartment: noteValue("Bộ phận cần tiếp cận") || lead.title || "bộ phận kỹ thuật/bảo trì",
+    recommendedSolution: noteValue("Giải pháp Fluke đề xuất") || "Thiết bị kiểm tra điện, camera nhiệt và giải pháp bảo trì Fluke phù hợp với ứng dụng thực tế.",
   };
-  return template.replace(/\{\{(companyName|contactName|salutation|title|industry)\}\}/g, (_, key: string) => values[key] || "");
+  return template.replace(/\{\{(companyName|contactName|salutation|title|industry|plantSite|targetDepartment|recommendedSolution)\}\}/g, (_, key: string) => values[key] || "");
 };
 
 async function connectionSettings(db: CrmDatabase) {
@@ -244,7 +307,9 @@ const campaignSelect = `SELECT c.id, c.name, c.objective, c.status, c.start_date
   c.subject_template AS subjectTemplate, c.body_template AS bodyTemplate,
   c.follow_up_enabled AS followUpEnabled, c.follow_up_delay_days AS followUpDelayDays,
   c.follow_up_subject_template AS followUpSubjectTemplate,
-  c.follow_up_body_template AS followUpBodyTemplate, c.asset_ids_json AS assetIdsJson,
+  c.follow_up_body_template AS followUpBodyTemplate,
+  c.industry_template_id AS industryTemplateId, c.industry_group AS industryGroup,
+  c.sequence_json AS sequenceJson, c.asset_ids_json AS assetIdsJson,
   COUNT(r.id) AS totalRecipients,
   SUM(CASE WHEN r.status IN ('Queued','Awaiting') THEN 1 ELSE 0 END) AS queuedRecipients,
   SUM(CASE WHEN r.sent_at <> '' THEN 1 ELSE 0 END) AS sentRecipients,
@@ -260,6 +325,7 @@ export async function listCampaigns(db: CrmDatabase): Promise<EmailCampaign[]> {
   return (result.results ?? []).map((row) => ({
     ...row,
     followUpEnabled: Boolean(row.followUpEnabled),
+    sequenceSteps: safeSequence(row.sequenceJson),
     assetIds: safeJsonArray(row.assetIdsJson),
     totalRecipients: Number(row.totalRecipients || 0),
     queuedRecipients: Number(row.queuedRecipients || 0),
@@ -274,19 +340,38 @@ export async function saveCampaign(db: CrmDatabase, input: Input) {
   const name = textValue(input, "name").slice(0, 180);
   const objective = textValue(input, "objective").slice(0, 1_000);
   const startDate = textValue(input, "startDate", vietnamNow().date);
-  const subjectTemplate = textValue(input, "subjectTemplate").slice(0, 500);
-  const bodyTemplate = textValue(input, "bodyTemplate").slice(0, 12_000);
-  const followUpEnabled = booleanValue(input, "followUpEnabled");
-  const followUpDelayDays = clampInt(numberValue(input, "followUpDelayDays", 4), 1, 30);
-  const followUpSubjectTemplate = textValue(input, "followUpSubjectTemplate").slice(0, 500);
-  const followUpBodyTemplate = textValue(input, "followUpBodyTemplate").slice(0, 12_000);
+  const industryTemplateId = textValue(input, "industryTemplateId").slice(0, 80);
+  const selectedTemplate = industryTemplateId ? industryTemplateById(industryTemplateId) : undefined;
+  if (industryTemplateId && !selectedTemplate) throw new Error("Không tìm thấy bộ mẫu email theo ngành đã chọn.");
+  let sequenceSteps = safeSequence(input.sequenceSteps);
+  if (selectedTemplate && sequenceSteps.length !== 4) sequenceSteps = selectedTemplate.steps;
+  if (!sequenceSteps.length) {
+    const subjectTemplate = textValue(input, "subjectTemplate").slice(0, 500);
+    const bodyTemplate = textValue(input, "bodyTemplate").slice(0, 12_000);
+    const followUpEnabled = booleanValue(input, "followUpEnabled");
+    sequenceSteps = safeSequence([
+      { order: 1, label: "Tiếp cận ban đầu", delayDays: 0, subjectTemplate, bodyTemplate },
+      ...(followUpEnabled ? [{
+        order: 2,
+        label: "Follow-up",
+        delayDays: clampInt(numberValue(input, "followUpDelayDays", 4), 1, 30),
+        subjectTemplate: textValue(input, "followUpSubjectTemplate").slice(0, 500),
+        bodyTemplate: textValue(input, "followUpBodyTemplate").slice(0, 12_000),
+      }] : []),
+    ]);
+  }
+  const subjectTemplate = sequenceSteps[0]?.subjectTemplate || "";
+  const bodyTemplate = sequenceSteps[0]?.bodyTemplate || "";
+  const followUpEnabled = sequenceSteps.length > 1;
+  const followUpDelayDays = sequenceSteps[1]?.delayDays || 4;
+  const followUpSubjectTemplate = sequenceSteps[1]?.subjectTemplate || "";
+  const followUpBodyTemplate = sequenceSteps[1]?.bodyTemplate || "";
+  const industryGroup = (selectedTemplate?.groupName || textValue(input, "industryGroup")).slice(0, 120);
   if (!name || !objective || !subjectTemplate || !bodyTemplate) {
     throw new Error("Vui lòng nhập tên, mục tiêu, tiêu đề và nội dung chiến dịch.");
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error("Ngày bắt đầu chiến dịch chưa hợp lệ.");
-  if (followUpEnabled && (!followUpSubjectTemplate || !followUpBodyTemplate)) {
-    throw new Error("Vui lòng nhập đủ tiêu đề và nội dung email Follow-up tự động.");
-  }
+  if (selectedTemplate && sequenceSteps.length !== 4) throw new Error("Bộ mẫu theo ngành phải có đủ 4 email.");
 
   const leadIds = Array.isArray(input.leadIds)
     ? [...new Set(input.leadIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0))].slice(0, 300)
@@ -317,11 +402,13 @@ export async function saveCampaign(db: CrmDatabase, input: Input) {
   const statements = [db.prepare(`INSERT INTO email_campaigns (
       id, name, objective, status, start_date, subject_template, body_template,
       follow_up_enabled, follow_up_delay_days, follow_up_subject_template,
-      follow_up_body_template, asset_ids_json, created_at, updated_at
-    ) VALUES (?, ?, ?, 'Draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      follow_up_body_template, industry_template_id, industry_group, sequence_json,
+      asset_ids_json, created_at, updated_at
+    ) VALUES (?, ?, ?, 'Draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(
       id, name, objective, startDate, subjectTemplate, bodyTemplate, followUpEnabled ? 1 : 0,
-      followUpDelayDays, followUpSubjectTemplate, followUpBodyTemplate, JSON.stringify(assetIds), now, now,
+      followUpDelayDays, followUpSubjectTemplate, followUpBodyTemplate, industryTemplateId,
+      industryGroup, JSON.stringify(sequenceSteps), JSON.stringify(assetIds), now, now,
     )];
   const nextSendAt = nextVietnamMorning(startDate);
   for (const leadId of leadIds) {
@@ -683,8 +770,9 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
       c.subject_template AS subjectTemplate, c.body_template AS bodyTemplate,
       c.follow_up_enabled AS followUpEnabled, c.follow_up_delay_days AS followUpDelayDays,
       c.follow_up_subject_template AS followUpSubjectTemplate,
-      c.follow_up_body_template AS followUpBodyTemplate, c.asset_ids_json AS assetIdsJson,
-      l.company_name AS companyName, l.contact_name AS contactName, l.title, l.industry, l.email
+      c.follow_up_body_template AS followUpBodyTemplate, c.sequence_json AS sequenceJson,
+      c.asset_ids_json AS assetIdsJson, l.company_name AS companyName,
+      l.contact_name AS contactName, l.title, l.industry, l.notes, l.email
       FROM email_campaign_recipients r
       JOIN email_campaigns c ON c.id = r.campaign_id
       JOIN prospecting_leads l ON l.id = r.lead_id
@@ -708,11 +796,13 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
       for (const recipient of recipients) {
         const now = new Date().toISOString();
         const messageId = `EML-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
-        const isFollowUp = recipient.currentStep > 0;
-        const subjectTemplate = isFollowUp ? recipient.followUpSubjectTemplate : recipient.subjectTemplate;
-        const bodyTemplate = isFollowUp ? recipient.followUpBodyTemplate : recipient.bodyTemplate;
-        const subject = personalizeEmail(subjectTemplate, recipient);
-        const body = personalizeEmail(bodyTemplate, recipient);
+        const sequence = safeSequence(recipient.sequenceJson).length
+          ? safeSequence(recipient.sequenceJson)
+          : legacySequence(recipient);
+        const currentStepIndex = Math.min(Math.max(recipient.currentStep, 0), sequence.length - 1);
+        const currentStep = sequence[currentStepIndex];
+        const subject = personalizeEmail(currentStep.subjectTemplate, recipient);
+        const body = personalizeEmail(currentStep.bodyTemplate, recipient);
         let assets = assetCache.get(recipient.campaignId);
         if (!assets) {
           assets = await storedCampaignAssets(db, recipient.assetIdsJson);
@@ -727,8 +817,10 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
             ...branded,
             attachments: assets.attachments,
           });
-          const hasFollowUp = !isFollowUp && Boolean(recipient.followUpEnabled);
-          const nextSendAt = hasFollowUp ? addDays(now, recipient.followUpDelayDays) : "";
+          const nextStepIndex = currentStepIndex + 1;
+          const nextStep = sequence[nextStepIndex];
+          const hasNextStep = Boolean(nextStep);
+          const nextSendAt = hasNextStep ? addDays(now, nextStep.delayDays) : "";
           await db.batch([
             db.prepare(`INSERT INTO email_messages (
               id, lead_id, direction, sender_email, recipient_email, subject, body_text, status,
@@ -741,12 +833,12 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
             db.prepare(`UPDATE email_campaign_recipients SET status = ?, current_step = ?, next_send_at = ?,
               sent_at = CASE WHEN sent_at = '' THEN ? ELSE sent_at END, attempts = attempts + 1,
               last_error = '', email_message_id = ?, updated_at = ? WHERE id = ?`)
-              .bind(hasFollowUp ? "Awaiting" : "Completed", hasFollowUp ? 1 : recipient.currentStep,
+              .bind(hasNextStep ? "Awaiting" : "Completed", hasNextStep ? nextStepIndex : currentStepIndex,
                 nextSendAt, now, messageId, now, recipient.id),
             db.prepare(`UPDATE prospecting_leads SET last_email_date = ?, email_subject = ?,
               status = CASE WHEN converted_opportunity_id <> '' THEN status ELSE 'Chờ phản hồi' END,
               next_follow_up_date = ?, updated_at = ? WHERE id = ?`)
-              .bind(local.date, subject, hasFollowUp ? nextSendAt.slice(0, 10) : tomorrow(), now, recipient.leadId),
+              .bind(local.date, subject, hasNextStep ? nextSendAt.slice(0, 10) : tomorrow(), now, recipient.leadId),
           ]);
           sent += 1;
         } catch (error) {
@@ -762,7 +854,7 @@ export async function runEmailAutomation(db: CrmDatabase, runType: "Scheduled" |
                 recipient.campaignId, `failed:${messageId}`, message.slice(0, 1_000), now),
             db.prepare(`UPDATE email_campaign_recipients SET status = ?, attempts = ?, last_error = ?,
               next_send_at = ?, updated_at = ? WHERE id = ?`)
-              .bind(attempts >= 3 ? "Failed" : (isFollowUp ? "Awaiting" : "Queued"), attempts,
+              .bind(attempts >= 3 ? "Failed" : (currentStepIndex > 0 ? "Awaiting" : "Queued"), attempts,
                 message.slice(0, 1_000), retryAt, now, recipient.id),
           ]);
           failed += 1;
@@ -821,5 +913,5 @@ export async function loadAutomationData(db: CrmDatabase) {
     listCampaigns(db),
     getAutomationAnalytics(db),
   ]);
-  return { automation, campaigns, analytics };
+  return { automation, campaigns, analytics, templates: INDUSTRY_EMAIL_TEMPLATES };
 }
