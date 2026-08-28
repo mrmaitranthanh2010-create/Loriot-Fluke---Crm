@@ -148,6 +148,9 @@ const CREATE_STATEMENTS = [
     follow_up_delay_days INTEGER NOT NULL DEFAULT 4,
     follow_up_subject_template TEXT NOT NULL DEFAULT '',
     follow_up_body_template TEXT NOT NULL DEFAULT '',
+    industry_template_id TEXT NOT NULL DEFAULT '',
+    industry_group TEXT NOT NULL DEFAULT '',
+    sequence_json TEXT NOT NULL DEFAULT '[]',
     asset_ids_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -374,6 +377,12 @@ const EMAIL_MESSAGE_COLUMNS = [
   ["ai_processed_at", "TEXT NOT NULL DEFAULT ''"],
 ] as const;
 
+const EMAIL_CAMPAIGN_COLUMNS = [
+  ["industry_template_id", "TEXT NOT NULL DEFAULT ''"],
+  ["industry_group", "TEXT NOT NULL DEFAULT ''"],
+  ["sequence_json", "TEXT NOT NULL DEFAULT '[]'"],
+] as const;
+
 const OPPORTUNITY_COLUMNS = [
   ["end_user_company", "TEXT NOT NULL DEFAULT ''"],
   ["end_user_address", "TEXT NOT NULL DEFAULT ''"],
@@ -472,6 +481,18 @@ async function initializeDatabase() {
     if (!existingEmailMessageColumns.has(name)) {
       try {
         await db.prepare(`ALTER TABLE email_messages ADD COLUMN ${name} ${definition}`).run();
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+  }
+
+  const emailCampaignColumnResult = await db.prepare("PRAGMA table_info(email_campaigns)").all<{ name: string }>();
+  const existingEmailCampaignColumns = new Set((emailCampaignColumnResult.results ?? []).map((column) => column.name));
+  for (const [name, definition] of EMAIL_CAMPAIGN_COLUMNS) {
+    if (!existingEmailCampaignColumns.has(name)) {
+      try {
+        await db.prepare(`ALTER TABLE email_campaigns ADD COLUMN ${name} ${definition}`).run();
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
       }
