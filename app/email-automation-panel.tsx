@@ -6,6 +6,7 @@ import type {
   EmailAutomationAnalytics,
   EmailAutomationSettings,
   EmailCampaign,
+  EmailLeadSendStat,
   Lead,
 } from "@/lib/crm";
 
@@ -88,11 +89,13 @@ async function automationRequest(body?: Record<string, unknown>) {
 export function EmailAutomationPanel({
   leads,
   assets,
+  leadSendStats,
   emailConfigured,
   onChanged,
 }: {
   leads: Lead[];
   assets: EmailAsset[];
+  leadSendStats: EmailLeadSendStat[];
   emailConfigured: boolean;
   onChanged: () => Promise<void>;
 }) {
@@ -101,6 +104,8 @@ export function EmailAutomationPanel({
   const [campaignOpen, setCampaignOpen] = useState(false);
   const [draft, setDraft] = useState<CampaignDraft>(emptyCampaign());
   const [leadSearch, setLeadSearch] = useState("");
+  const [leadIndustry, setLeadIndustry] = useState("");
+  const [leadHistory, setLeadHistory] = useState<"all" | "never" | "sent">("all");
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -172,15 +177,40 @@ export function EmailAutomationPanel({
     }
   };
 
+  const sendStatsByLead = useMemo(() => new Map(
+    leadSendStats.map((item) => [item.leadId, item]),
+  ), [leadSendStats]);
+
+  const leadIndustries = useMemo(() => [...new Set(leads
+    .filter((lead) => lead.email && !lead.emailOptOut && lead.status !== "Không nhận email" && lead.status !== "Đã chuyển cơ hội")
+    .map((lead) => lead.industry.trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")), [leads]);
+
   const eligibleLeads = useMemo(() => leads.filter((lead) => {
     if (!lead.email || lead.emailOptOut || lead.status === "Không nhận email" || lead.status === "Đã chuyển cơ hội") return false;
     const query = normalize(leadSearch.trim());
+    const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
+    if (leadIndustry && lead.industry !== leadIndustry) return false;
+    if (leadHistory === "never" && sentCount > 0) return false;
+    if (leadHistory === "sent" && sentCount === 0) return false;
     return !query || normalize(`${lead.companyName} ${lead.contactName} ${lead.email} ${lead.industry}`).includes(query);
-  }), [leadSearch, leads]);
+  }).sort((a, b) => {
+    const aStat = sendStatsByLead.get(a.id);
+    const bStat = sendStatsByLead.get(b.id);
+    const aSent = Number(aStat?.sentCount || 0);
+    const bSent = Number(bStat?.sentCount || 0);
+    if ((aSent === 0) !== (bSent === 0)) return aSent === 0 ? -1 : 1;
+    if ((aStat?.lastSentAt || "") !== (bStat?.lastSentAt || "")) {
+      return (aStat?.lastSentAt || "").localeCompare(bStat?.lastSentAt || "");
+    }
+    return a.companyName.localeCompare(b.companyName, "vi");
+  }), [leadHistory, leadIndustry, leadSearch, leads, sendStatsByLead]);
 
   const openCampaign = () => {
     setDraft(emptyCampaign());
     setLeadSearch("");
+    setLeadIndustry("");
+    setLeadHistory("all");
     setFormError("");
     setCampaignOpen(true);
   };
@@ -349,7 +379,24 @@ export function EmailAutomationPanel({
           </section>
 
           <aside className="campaign-form-side">
-            <section className="campaign-recipient-select"><header><div><strong>Lead nhận email</strong><small>Không hiển thị Lead đã từ chối email · tối đa 300 Lead</small></div><span>{draft.leadIds.length} đã chọn</span></header><input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Tìm công ty, email, ngành..."/><button type="button" onClick={() => setDraft({ ...draft, leadIds: eligibleLeads.slice(0, 300).map((lead) => lead.id) })}>Chọn tất cả đang hiển thị</button><div>{eligibleLeads.map((lead) => <label key={lead.id} className={draft.leadIds.includes(lead.id) ? "is-selected" : ""}><input aria-label={`Chọn Lead ${lead.companyName}`} type="checkbox" checked={draft.leadIds.includes(lead.id)} onChange={() => toggleLead(lead.id)}/><span><strong>{lead.companyName}</strong><small>{lead.contactName || lead.industry || "Chưa có người liên hệ"} · {lead.email}</small></span></label>)}</div></section>
+            <section className="campaign-recipient-select">
+              <header><div><strong>Lead nhận email</strong><small>Lọc theo ngành và lịch sử gửi · tối đa 300 Lead</small></div><span>{draft.leadIds.length} đã chọn</span></header>
+              <div className="campaign-recipient-filters">
+                <input aria-label="Tìm Lead trong chiến dịch" value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Tìm công ty, email, ngành..."/>
+                <select aria-label="Lọc ngành cho chiến dịch" value={leadIndustry} onChange={(event) => setLeadIndustry(event.target.value)}><option value="">Tất cả nhóm ngành</option>{leadIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
+                <select aria-label="Lọc lịch sử gửi cho chiến dịch" value={leadHistory} onChange={(event) => setLeadHistory(event.target.value as "all" | "never" | "sent")}><option value="all">Tất cả lịch sử</option><option value="never">Chưa gửi lần nào</option><option value="sent">Đã từng gửi</option></select>
+              </div>
+              <div className="campaign-recipient-toolbar"><span>{eligibleLeads.length} công ty</span><div><button type="button" onClick={() => setDraft({ ...draft, leadIds: eligibleLeads.slice(0, 300).map((lead) => lead.id) })}>Chọn nhóm đang hiển thị</button><button type="button" onClick={() => setDraft({ ...draft, leadIds: [] })} disabled={!draft.leadIds.length}>Bỏ chọn</button></div></div>
+              <div className="campaign-recipient-list">{eligibleLeads.map((lead) => {
+                const stat = sendStatsByLead.get(lead.id);
+                const sentCount = Number(stat?.sentCount || 0);
+                return <label key={lead.id} className={draft.leadIds.includes(lead.id) ? "is-selected" : ""}>
+                  <input aria-label={`Chọn Lead ${lead.companyName}`} type="checkbox" checked={draft.leadIds.includes(lead.id)} onChange={() => toggleLead(lead.id)}/>
+                  <span><strong>{lead.companyName}</strong><small>{lead.industry || "Chưa phân nhóm"} · {lead.email}</small></span>
+                  <span className={`email-recipient-history ${sentCount ? "has-sent" : "not-sent"}`}><strong>{sentCount ? `Đã gửi ${sentCount} lần` : "Chưa gửi"}</strong><small>{sentCount ? `Gần nhất ${displayTime(stat?.lastSentAt || "")}` : "Sẵn sàng tiếp cận"}</small></span>
+                </label>;
+              })}</div>
+            </section>
             <section className="campaign-asset-select"><header><strong>Ảnh & tệp gửi kèm</strong><span>{draft.assetIds.length}/5</span></header>{!assets.length ? <p>Kho tệp đang trống.</p> : assets.map((asset) => <label key={asset.id} className={draft.assetIds.includes(asset.id) ? "is-selected" : ""}><input aria-label={`Chọn tệp ${asset.fileName}`} type="checkbox" checked={draft.assetIds.includes(asset.id)} onChange={() => toggleAsset(asset.id)}/><span><strong>{asset.fileName}</strong><small>{asset.fileKind === "image" ? "Chèn trong email" : "Tệp đính kèm"}</small></span></label>)}</section>
             <aside className="campaign-safety"><strong>Quy tắc bảo vệ</strong><span>✓ Giới hạn email/ngày</span><span>✓ Gửi theo lô nhỏ</span><span>✓ Tự dừng khi có phản hồi</span><span>✓ Không gửi Lead đã opt-out</span><span>✓ AI không tự gửi bản nháp trả lời</span></aside>
           </aside>

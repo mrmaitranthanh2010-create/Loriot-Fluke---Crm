@@ -126,6 +126,12 @@ export type EmailMessageLog = {
   createdAt: string;
 };
 
+export type EmailLeadSendStat = {
+  leadId: string;
+  sentCount: number;
+  lastSentAt: string;
+};
+
 export const EMAIL_REPLY_CLASSIFICATIONS = [
   "Có nhu cầu",
   "Yêu cầu báo giá",

@@ -460,6 +460,25 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
   assert.match(workerConfig, /bucket_name: "loriot-crm-email-files"/);
 });
 
+test("groups email recipients and shows exact send history", async () => {
+  const [outreach, automation, emailApi, styles] = await Promise.all([
+    readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/email-automation-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/email/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(outreach, /Lọc Lead theo nhóm ngành/);
+  assert.match(outreach, /Chưa gửi lần nào/);
+  assert.match(outreach, /Đã gửi \$\{sentCount\} lần/);
+  assert.match(outreach, /Chọn tối đa 10/);
+  assert.match(automation, /Chọn nhóm đang hiển thị/);
+  assert.match(automation, /Lọc lịch sử gửi cho chiến dịch/);
+  assert.match(emailApi, /COUNT\(\*\) AS sentCount/);
+  assert.match(emailApi, /MAX\(sent_at\) AS lastSentAt/);
+  assert.match(styles, /email-recipient-history\.not-sent/);
+  assert.match(styles, /campaign-recipient-filters/);
+});
+
 test("merges High-Touch updates and tracks accepted customer revenue", async () => {
   const [client, productsApi, database] = await Promise.all([
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),

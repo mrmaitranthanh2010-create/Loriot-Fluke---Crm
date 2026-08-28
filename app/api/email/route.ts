@@ -8,7 +8,7 @@ import {
   type EmailConnectionSettings,
   type SmtpSecurity,
 } from "@/lib/email-server";
-import type { EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
+import type { EmailLeadSendStat, EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
 import { loriotEmailContent, stripKnownEmailSignature } from "@/lib/email-branding";
 import {
   emailFilesBucket,
@@ -98,7 +98,7 @@ function publicSettings(row: EmailSettingsRow | null): EmailSettingsPublic {
 }
 
 async function loadEmailData(db: CrmDatabase) {
-  const [row, messages, assets] = await Promise.all([
+  const [row, messages, leadSendStats, assets] = await Promise.all([
     settingsRow(db),
     db.prepare(`SELECT id, lead_id AS leadId, direction, sender_email AS senderEmail,
       recipient_email AS recipientEmail, subject, body_text AS bodyText, status,
@@ -108,9 +108,18 @@ async function loadEmailData(db: CrmDatabase) {
       provider_message_id AS providerMessageId, error_message AS errorMessage,
       sent_at AS sentAt, received_at AS receivedAt, created_at AS createdAt
       FROM email_messages ORDER BY created_at DESC LIMIT 120`).all<EmailMessageLog>(),
+    db.prepare(`SELECT lead_id AS leadId, COUNT(*) AS sentCount, MAX(sent_at) AS lastSentAt
+      FROM email_messages
+      WHERE direction = 'outbound' AND status = 'Sent' AND TRIM(lead_id) <> ''
+      GROUP BY lead_id`).all<EmailLeadSendStat>(),
     listEmailAssets(db),
   ]);
-  return { settings: publicSettings(row), messages: messages.results ?? [], assets: assets.map(publicEmailAsset) };
+  return {
+    settings: publicSettings(row),
+    messages: messages.results ?? [],
+    leadSendStats: leadSendStats.results ?? [],
+    assets: assets.map(publicEmailAsset),
+  };
 }
 
 async function requireConnection(db: CrmDatabase) {

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import type { EmailAsset, EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
+import type { EmailAsset, EmailLeadSendStat, EmailMessageLog, EmailSettingsPublic, Lead } from "@/lib/crm";
 import { LORIOT_LOGO_DATA_URL } from "@/lib/email-branding";
 import { EmailAutomationPanel } from "@/app/email-automation-panel";
 
 type EmailPayload = {
   settings: EmailSettingsPublic;
   messages: EmailMessageLog[];
+  leadSendStats: EmailLeadSendStat[];
   assets: EmailAsset[];
   result?: Record<string, unknown>;
   error?: string;
@@ -68,6 +69,8 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [recipientSearch, setRecipientSearch] = useState("");
+  const [recipientIndustry, setRecipientIndustry] = useState("");
+  const [recipientHistory, setRecipientHistory] = useState<"all" | "never" | "sent">("all");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [followUpDays, setFollowUpDays] = useState(4);
@@ -157,6 +160,8 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     if (!data) return;
     setSelectedIds([]);
     setRecipientSearch("");
+    setRecipientIndustry("");
+    setRecipientHistory("all");
     setSubject(data.settings.defaultSubject);
     setBody(data.settings.defaultBody);
     setFollowUpDays(4);
@@ -227,11 +232,45 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     });
   };
 
+  const leadSendStats = useMemo(() => new Map(
+    (data?.leadSendStats ?? []).map((item) => [item.leadId, item]),
+  ), [data?.leadSendStats]);
+
+  const recipientIndustries = useMemo(() => [...new Set(leads
+    .filter((lead) => lead.email && !lead.emailOptOut && lead.status !== "Không nhận email" && lead.status !== "Đã chuyển cơ hội")
+    .map((lead) => lead.industry.trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")), [leads]);
+
   const eligibleLeads = useMemo(() => leads.filter((lead) => {
     if (!lead.email || lead.emailOptOut || lead.status === "Không nhận email" || lead.status === "Đã chuyển cơ hội") return false;
     const query = normalize(recipientSearch.trim());
-    return !query || normalize(`${lead.companyName} ${lead.contactName} ${lead.email}`).includes(query);
-  }), [leads, recipientSearch]);
+    const sentCount = Number(leadSendStats.get(lead.id)?.sentCount || 0);
+    if (recipientIndustry && lead.industry !== recipientIndustry) return false;
+    if (recipientHistory === "never" && sentCount > 0) return false;
+    if (recipientHistory === "sent" && sentCount === 0) return false;
+    return !query || normalize(`${lead.companyName} ${lead.contactName} ${lead.email} ${lead.industry}`).includes(query);
+  }).sort((a, b) => {
+    const aStat = leadSendStats.get(a.id);
+    const bStat = leadSendStats.get(b.id);
+    const aSent = Number(aStat?.sentCount || 0);
+    const bSent = Number(bStat?.sentCount || 0);
+    if ((aSent === 0) !== (bSent === 0)) return aSent === 0 ? -1 : 1;
+    if ((aStat?.lastSentAt || "") !== (bStat?.lastSentAt || "")) {
+      return (aStat?.lastSentAt || "").localeCompare(bStat?.lastSentAt || "");
+    }
+    return a.companyName.localeCompare(b.companyName, "vi");
+  }), [leadSendStats, leads, recipientHistory, recipientIndustry, recipientSearch]);
+
+  const chooseVisibleLeads = () => {
+    setSelectedIds((current) => {
+      const next = [...current];
+      for (const lead of eligibleLeads) {
+        if (next.length >= 10) break;
+        if (!next.includes(lead.id)) next.push(lead.id);
+      }
+      return next;
+    });
+  };
 
   const toggleLead = (leadId: string) => {
     setSelectedIds((current) => {
@@ -278,6 +317,8 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     if (!message.draftReply || !message.leadId) return;
     setSelectedIds([message.leadId]);
     setRecipientSearch(leadById.get(message.leadId)?.companyName || "");
+    setRecipientIndustry("");
+    setRecipientHistory("all");
     setSubject(message.subject.toLowerCase().startsWith("re:") ? message.subject : `Re: ${message.subject}`);
     setBody(message.draftReply);
     setFollowUpDays(4);
@@ -309,6 +350,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
     {data && <EmailAutomationPanel
       leads={leads}
       assets={data.assets}
+      leadSendStats={data.leadSendStats}
       emailConfigured={data.settings.configured}
       onChanged={async () => {
         await Promise.all([refreshEmailData(), onRefresh()]);
@@ -401,7 +443,24 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
       <div className="modal email-compose-modal" role="dialog" aria-modal="true" aria-label="Soạn email cho Lead">
         <header className="modal-header"><div><span>EMAIL OUTBOUND</span><h2>Soạn email cho Lead</h2><p>Chọn tối đa 10 người nhận. Mỗi Lead nhận một email riêng đã cá nhân hóa.</p></div><button className="modal-close" onClick={() => setComposeOpen(false)} aria-label="Đóng">×</button></header>
         <form onSubmit={sendEmails}><div className="modal-body email-compose-grid">
-          <section className="email-recipient-picker"><header><strong>Người nhận</strong><span>{selectedIds.length}/10 đã chọn</span></header><input aria-label="Tìm Lead nhận email" value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Gõ tên công ty, người liên hệ hoặc email..."/><div>{eligibleLeads.length === 0 ? <p>Không có Lead có email phù hợp.</p> : eligibleLeads.map((lead) => <label key={lead.id} aria-label={`Chọn Lead ${lead.companyName}`} className={selectedIds.includes(lead.id) ? "is-selected" : ""}><input type="checkbox" checked={selectedIds.includes(lead.id)} onChange={() => toggleLead(lead.id)}/><span><strong>{lead.companyName}</strong><small>{lead.contactName || "Chưa có người liên hệ"} · {lead.email}</small></span></label>)}</div></section>
+          <section className="email-recipient-picker">
+            <header><div><strong>Người nhận</strong><small>Lead chưa gửi được xếp trước để tránh gửi trùng ngoài ý muốn.</small></div><span>{selectedIds.length}/10 đã chọn</span></header>
+            <div className="email-recipient-filters">
+              <input aria-label="Tìm Lead nhận email" value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Gõ tên công ty, người liên hệ hoặc email..."/>
+              <select aria-label="Lọc Lead theo nhóm ngành" value={recipientIndustry} onChange={(event) => setRecipientIndustry(event.target.value)}><option value="">Tất cả nhóm ngành</option>{recipientIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
+              <select aria-label="Lọc Lead theo lịch sử gửi" value={recipientHistory} onChange={(event) => setRecipientHistory(event.target.value as "all" | "never" | "sent")}><option value="all">Tất cả lịch sử gửi</option><option value="never">Chưa gửi lần nào</option><option value="sent">Đã từng gửi</option></select>
+            </div>
+            <div className="email-recipient-toolbar"><span>{eligibleLeads.length} công ty đang hiển thị</span><div><button type="button" onClick={chooseVisibleLeads}>Chọn tối đa 10</button><button type="button" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>Bỏ chọn</button></div></div>
+            <div className="email-recipient-list">{eligibleLeads.length === 0 ? <p>Không có Lead có email phù hợp.</p> : eligibleLeads.map((lead) => {
+              const stat = leadSendStats.get(lead.id);
+              const sentCount = Number(stat?.sentCount || 0);
+              return <label key={lead.id} aria-label={`Chọn Lead ${lead.companyName}`} className={selectedIds.includes(lead.id) ? "is-selected" : ""}>
+                <input type="checkbox" checked={selectedIds.includes(lead.id)} onChange={() => toggleLead(lead.id)}/>
+                <span className="email-recipient-company"><strong>{lead.companyName}</strong><small>{lead.industry || "Chưa phân nhóm ngành"} · {lead.email}</small></span>
+                <span className={`email-recipient-history ${sentCount ? "has-sent" : "not-sent"}`}><strong>{sentCount ? `Đã gửi ${sentCount} lần` : "Chưa gửi"}</strong><small>{sentCount ? `Gần nhất ${displayTime(stat?.lastSentAt || "")}` : "Sẵn sàng tiếp cận"}</small></span>
+              </label>;
+            })}</div>
+          </section>
           <section className="email-composer">
             <label className="form-field"><span>Tiêu đề</span><input required value={subject} onChange={(event) => setSubject(event.target.value)}/></label>
             <label className="form-field"><span>Nội dung</span><textarea rows={16} required value={body} onChange={(event) => setBody(event.target.value)}/></label>
