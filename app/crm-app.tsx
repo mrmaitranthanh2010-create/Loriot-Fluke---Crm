@@ -22,7 +22,7 @@ import { LeadView, type LeadDraft } from "@/app/lead-view";
 import { FollowUpPanel, type ActivityDraft } from "@/app/follow-up-panel";
 import { generateQuotationXlsx } from "@/lib/quotation-xlsx";
 import { InventoryView, WeeklyReportsView } from "@/app/operations-views";
-import { parseHighTouchXlsx, parsePriceListXlsx, parseQuotationWorkbookXlsx } from "@/lib/product-xlsx";
+import { parseHighTouchXlsx, parsePriceListXlsx, parseQuotationWorkbookXlsx, parseTargetLeadsXlsx } from "@/lib/product-xlsx";
 import {
   calculateVndPrice,
   vietnamGreeting,
@@ -762,6 +762,26 @@ export function CrmApp() {
     if (!window.confirm(`Xóa Lead "${lead.companyName}" khỏi danh sách tìm kiếm?${relation}`)) return;
     await mutate({ action: "deleteLead", id: lead.id }, "Đã xóa Lead khỏi danh sách tìm kiếm.");
   };
+  const importLeadFile = async (file: File) => {
+    setSaving(true);
+    setError("");
+    try {
+      const parsed = parseTargetLeadsXlsx(new Uint8Array(await file.arrayBuffer()));
+      const response = await fetch("/api/crm", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "importLeads", sourceFile: file.name, leads: parsed.rows }),
+      });
+      const result = await response.json() as CrmData & { importSummary?: { total: number }; error?: string };
+      if (!response.ok) throw new Error(result.error || "Không thể nhập Lead từ Excel.");
+      setData(result);
+      setNotice(`Đã nhập/cập nhật ${result.importSummary?.total ?? parsed.rows.length} Lead từ sheet ${parsed.sheetName}.`);
+      window.setTimeout(() => setNotice(""), 4200);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Không thể đọc file Lead Excel.");
+    } finally {
+      setSaving(false);
+    }
+  };
   const saveActivity = async (activity: ActivityDraft) => {
     const result = await mutate(
       { action: "saveActivity", ...activity },
@@ -1103,6 +1123,7 @@ export function CrmApp() {
           onDelete={deleteLead}
           onConvert={convertLead}
           onRefresh={load}
+          onImport={importLeadFile}
         />}
         {view === "actions" && <ActionCenter items={actionItems} onOpen={openEdit} onComplete={completeStep} saving={saving}/>} 
         {view === "pipeline" && <Pipeline opportunities={opportunities} onOpen={openEdit} onMove={moveStage} saving={saving}/>} 

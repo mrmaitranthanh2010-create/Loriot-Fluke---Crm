@@ -576,6 +576,9 @@ td > span { margin-top: 4px; color: #8a94a5; font-size: 8px; }
 @keyframes loading { 0% { transform: translateX(-110%); } 100% { transform: translateX(240%); } }
 
 .lead-rule { display: flex; align-items: center; gap: 12px; padding: 11px 15px; margin-bottom: 12px; border: 1px solid #ead9ad; border-radius: 8px; background: #fffaf0; }
+.lead-header-actions { display: flex; align-items: center; gap: 8px; }
+.lead-header-actions button { height: 39px; padding-inline: 13px; white-space: nowrap; }
+.lead-import-input { display: none; }
 .lead-rule strong { flex: 0 0 auto; color: #755400; font-size: 9px; }.lead-rule span { color: #776f60; font-size: 8px; line-height: 1.45; }
 .lead-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
 .lead-metrics article { padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }

@@ -370,6 +370,10 @@ test("separates outbound leads and reports only selected follow-up history", asy
   assert.match(client, /sourceLeadId/);
   assert.match(leadView, /Email tìm kiếm hàng loạt không tự tạo cơ hội/);
   assert.match(leadView, /Chuyển cơ hội/);
+  assert.match(leadView, /Nhập Excel/);
+  assert.match(client, /parseTargetLeadsXlsx/);
+  assert.match(crmApi, /action === "importLeads"/);
+  assert.match(crmApi, /ON CONFLICT\(id\) DO UPDATE SET/);
   assert.match(followUp, /Nhật ký Follow-up & Next Step/);
   assert.match(followUp, /Đưa vào báo cáo tuần/);
   assert.match(followUp, /Có thể chỉ điền mục này/);

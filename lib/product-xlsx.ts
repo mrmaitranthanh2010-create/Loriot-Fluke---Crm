@@ -66,6 +66,21 @@ export type ImportedQuotation = {
   items: ImportedQuotationItem[];
 };
 
+export type ImportedTargetLead = {
+  id: string;
+  companyName: string;
+  website: string;
+  industry: string;
+  accountType: "End-User";
+  contactName: string;
+  title: string;
+  email: string;
+  phone: string;
+  source: string;
+  notes: string;
+  owner: "Mai Trần Thành";
+};
+
 const text = (value: unknown) => String(value ?? "").trim();
 const normalizeHeader = (value: unknown) => text(value).toUpperCase().replace(/\s+/g, " ");
 const number = (value: unknown) => {
@@ -216,6 +231,80 @@ export function parseHighTouchXlsx(bytes: Uint8Array) {
   }
   if (!byKey.size) throw new Error("Không tìm thấy danh sách Model High‑Touch trong file.");
   return { sheetCount: sheets.length, rows: [...byKey.values()] };
+}
+
+export function parseTargetLeadsXlsx(bytes: Uint8Array) {
+  const sheets = workbookSheets(bytes);
+  const sheet = sheets.find((item) => normalizeHeader(item.name) === "MASTER ACCOUNTS") ?? sheets[0];
+  if (!sheet) throw new Error("File Excel không có sheet dữ liệu Lead.");
+  const headerRow = sheet.rows.findIndex((row, index) => {
+    if (index >= 20) return false;
+    const headers = row.map(normalizeHeader);
+    return headers.includes("COMPANY") && headers.includes("PLANT/SITE") && headers.includes("PUBLIC EMAIL");
+  });
+  if (headerRow < 0) throw new Error("Không tìm thấy dòng tiêu đề Company, Plant/Site và Public Email.");
+
+  const headers = headerMap(sheet.rows[headerRow]);
+  const required = (header: string) => {
+    const index = findIndex(headers, (value) => value === header);
+    if (index < 0) throw new Error(`File thiếu cột bắt buộc: ${header}.`);
+    return index;
+  };
+  const company = required("COMPANY");
+  const site = required("PLANT/SITE");
+  const province = required("PROVINCE");
+  const location = required("INDUSTRIAL PARK/LOCATION");
+  const industry = required("INDUSTRY");
+  const subIndustry = required("SUB-INDUSTRY");
+  const priority = required("PRIORITY A/B/C");
+  const painPoint = required("PAIN POINT");
+  const solution = required("RECOMMENDED FLUKE SOLUTION");
+  const personas = required("TARGET PERSONAS");
+  const website = required("WEBSITE/SOURCE");
+  const sourceNotes = required("NOTES");
+  const publicEmail = required("PUBLIC EMAIL");
+  const contactType = required("CONTACT TYPE");
+  const contactSource = required("EMAIL / CONTACT SOURCE");
+  const confidence = required("CONFIDENCE");
+
+  const dataRows = sheet.rows.slice(headerRow + 1).filter((row) => get(row, company));
+  if (!dataRows.length) throw new Error("File không có công ty hợp lệ để nhập.");
+  if (dataRows.length > 1000) throw new Error("Mỗi lần chỉ nhập tối đa 1.000 Lead.");
+  const rows = dataRows.map<ImportedTargetLead>((row, rowIndex) => {
+    const email = get(row, publicEmail).toLowerCase();
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) {
+      throw new Error(`Email chưa hợp lệ tại dòng Excel ${headerRow + rowIndex + 2}: ${email}.`);
+    }
+    const siteName = get(row, site);
+    const noteLines = [
+      siteName && `Nhà máy/Site: ${siteName}`,
+      get(row, province) && `Tỉnh/Thành phố: ${get(row, province)}`,
+      get(row, location) && `KCN/Địa điểm: ${get(row, location)}`,
+      get(row, priority) && `Ưu tiên: ${get(row, priority)}`,
+      get(row, painPoint) && `Pain point: ${get(row, painPoint)}`,
+      get(row, solution) && `Giải pháp Fluke đề xuất: ${get(row, solution)}`,
+      get(row, personas) && `Bộ phận cần tiếp cận: ${get(row, personas)}`,
+      get(row, sourceNotes) && `Ghi chú nguồn: ${get(row, sourceNotes)}`,
+      get(row, contactType) && `Loại email/liên hệ: ${get(row, contactType)}`,
+      get(row, confidence) && `Mức xác minh: ${get(row, confidence)}`,
+      get(row, contactSource) && `Nguồn email/liên hệ: ${get(row, contactSource)}`,
+    ].filter(Boolean);
+    return {
+      id: `LED-MB26-${String(rowIndex + 1).padStart(4, "0")}`,
+      companyName: get(row, company),
+      website: get(row, website),
+      industry: [get(row, industry), get(row, subIndustry)].filter(Boolean).join(" · "),
+      accountType: "End-User",
+      contactName: siteName,
+      title: get(row, personas),
+      email,
+      phone: "",
+      source: "Master Target Accounts Miền Bắc 2026",
+      notes: noteLines.join("\n"),
+      owner: "Mai Trần Thành",
+    };
+  });
+  return { sheetName: sheet.name, rows };
 }
 
 const dateFromText = (value: string) => {

@@ -236,6 +236,51 @@ async function deleteLead(input: Input) {
   await db.prepare("DELETE FROM prospecting_leads WHERE id = ?").bind(id).run();
 }
 
+async function importLeads(input: Input) {
+  const leads = Array.isArray(input.leads)
+    ? input.leads.filter((item): item is Input => Boolean(item) && typeof item === "object")
+    : [];
+  if (!leads.length) throw new Error("File không có Lead hợp lệ để nhập.");
+  if (leads.length > 1000) throw new Error("Mỗi lần chỉ nhập tối đa 1.000 Lead.");
+  const db = await ensureDatabase();
+  const now = new Date().toISOString();
+  const statements = leads.map((lead, index) => {
+    const id = textValue(lead, "id") || `LED-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const companyName = textValue(lead, "companyName");
+    const email = textValue(lead, "email").toLowerCase();
+    if (!/^LED-[A-Z0-9-]{1,28}$/.test(id)) throw new Error(`Mã Lead không hợp lệ tại dòng ${index + 1}.`);
+    if (!companyName) throw new Error(`Thiếu tên công ty tại dòng ${index + 1}.`);
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new Error(`Email chưa hợp lệ tại dòng ${index + 1}: ${email}.`);
+    return db.prepare(`INSERT INTO prospecting_leads (
+      id, company_name, website, industry, account_type, contact_name, title, email, phone, source,
+      last_email_date, status, next_follow_up_date, email_subject, reply_notes, notes, owner, email_opt_out,
+      converted_opportunity_id, converted_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'Chưa gửi', '', '', '', ?, ?, 0, '', '', ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      company_name = excluded.company_name,
+      website = excluded.website,
+      industry = excluded.industry,
+      account_type = excluded.account_type,
+      contact_name = excluded.contact_name,
+      title = excluded.title,
+      email = excluded.email,
+      phone = excluded.phone,
+      source = excluded.source,
+      notes = excluded.notes,
+      owner = excluded.owner,
+      updated_at = excluded.updated_at`).bind(
+      id, companyName, textValue(lead, "website"), textValue(lead, "industry"),
+      textValue(lead, "accountType", "End-User"), textValue(lead, "contactName"), textValue(lead, "title"),
+      email, textValue(lead, "phone"), textValue(lead, "source", "Nhập Excel"), textValue(lead, "notes"),
+      textValue(lead, "owner", "Mai Trần Thành"), now, now,
+    );
+  });
+  for (let start = 0; start < statements.length; start += 50) {
+    await db.batch(statements.slice(start, start + 50));
+  }
+  return { total: leads.length };
+}
+
 async function saveActivity(input: Input) {
   const db = await ensureDatabase();
   const currentId = textValue(input, "id");
@@ -738,9 +783,10 @@ export async function POST(request: Request) {
   try {
     const input = (await request.json()) as Input;
     const action = textValue(input, "action");
-    let importSummary: { inserted: number; updated: number; total: number } | undefined;
+    let importSummary: { inserted?: number; updated?: number; total: number } | undefined;
     if (action === "saveLead") await saveLead(input);
     else if (action === "deleteLead") await deleteLead(input);
+    else if (action === "importLeads") importSummary = await importLeads(input);
     else if (action === "saveActivity") await saveActivity(input);
     else if (action === "deleteActivity") await deleteActivity(input);
     else if (action === "create") await createOpportunity(input);

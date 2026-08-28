@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ACCOUNT_TYPES, LEAD_STATUSES, type Lead } from "@/lib/crm";
 import { EmailOutreachPanel } from "@/app/email-outreach-panel";
 
@@ -54,18 +54,20 @@ const shortDate = (value: string) => value
   ? new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T00:00:00`))
   : "—";
 
-export function LeadView({ leads, saving, onSave, onDelete, onConvert, onRefresh }: {
+export function LeadView({ leads, saving, onSave, onDelete, onConvert, onRefresh, onImport }: {
   leads: Lead[];
   saving: boolean;
   onSave: (lead: LeadDraft) => Promise<boolean>;
   onDelete: (lead: Lead) => Promise<void>;
   onConvert: (lead: Lead) => void;
   onRefresh: () => Promise<void>;
+  onImport: (file: File) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<LeadDraft>(emptyLead());
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Tất cả trạng thái");
+  const importInputRef = useRef<HTMLInputElement>(null);
   const query = normalized(search.trim());
   const filtered = useMemo(() => leads.filter((lead) => {
     const matchesText = !query || normalized([
@@ -85,9 +87,14 @@ export function LeadView({ leads, saving, onSave, onDelete, onConvert, onRefresh
     event.preventDefault();
     if (await onSave(draft)) setOpen(false);
   };
+  const importFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) await onImport(file);
+  };
 
   return <>
-    <div className="page-header"><div><span>LEAD & EMAIL OUTBOUND</span><h1>Lead tìm kiếm khách hàng</h1><p>Lưu danh sách gửi email riêng; chỉ Lead đủ tín hiệu mới được chuyển vào Pipeline và báo cáo.</p></div><button className="primary-button page-button" onClick={showCreate}>＋ Thêm Lead</button></div>
+    <div className="page-header"><div><span>LEAD & EMAIL OUTBOUND</span><h1>Lead tìm kiếm khách hàng</h1><p>Lưu danh sách gửi email riêng; chỉ Lead đủ tín hiệu mới được chuyển vào Pipeline và báo cáo.</p></div><div className="lead-header-actions"><input ref={importInputRef} className="lead-import-input" type="file" accept=".xlsx" onChange={importFile}/><button className="secondary-button" disabled={saving} onClick={() => importInputRef.current?.click()}>↑ Nhập Excel</button><button className="primary-button" onClick={showCreate}>＋ Thêm Lead</button></div></div>
     <section className="lead-rule"><strong>Vùng làm việc riêng</strong><span>Email tìm kiếm hàng loạt không tự tạo cơ hội, không tạo báo giá và không xuất hiện trong báo cáo tuần.</span></section>
     <EmailOutreachPanel leads={leads} onRefresh={onRefresh}/>
     <section className="lead-metrics">
