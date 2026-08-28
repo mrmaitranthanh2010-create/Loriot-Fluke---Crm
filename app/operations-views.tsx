@@ -179,8 +179,8 @@ export function WeeklyReportsView({ opportunities, activities, onError, onNotice
       const logs = selected.filter((activity) => activity.opportunityId === opportunity.id)
         .sort((a, b) => a.activityDate.localeCompare(b.activityDate) || a.createdAt.localeCompare(b.createdAt));
       const comments = logs.map((activity) => [
-        `- ${shortDate(activity.activityDate)} · ${activity.activityType}: ${activity.summary}`,
-        activity.outcome ? `Kết quả: ${activity.outcome}` : "",
+        `- ${shortDate(activity.activityDate)} · ${activity.activityType}${activity.summary ? `: ${activity.summary}` : ""}`,
+        activity.outcome ? `Phản hồi / kết quả: ${activity.outcome}` : "",
         activity.nextStep ? `Next step: ${activity.nextStep}${activity.dueDate ? ` (${shortDate(activity.dueDate)})` : ""}` : "",
       ].filter(Boolean).join(" — ")).join("\n");
       return { id: `WPI-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, status: opportunity.status === "Open" ? "A" : "C", projectName: opportunity.productApplication, customer: opportunity.endUserCompany || opportunity.companyName, projectLead: opportunity.contactName, startDate: logs[0]?.activityDate || opportunity.lastContactDate, preliminaryEndDate: opportunity.expectedCloseDate, adjustedEndDate: "", comments };

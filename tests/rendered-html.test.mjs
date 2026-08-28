@@ -372,8 +372,12 @@ test("separates outbound leads and reports only selected follow-up history", asy
   assert.match(leadView, /Chuyển cơ hội/);
   assert.match(followUp, /Nhật ký Follow-up & Next Step/);
   assert.match(followUp, /Đưa vào báo cáo tuần/);
+  assert.match(followUp, /Có thể chỉ điền mục này/);
+  assert.match(followUp, /draft\.summary\.trim\(\) \|\| draft\.outcome\.trim\(\) \|\| draft\.nextStep\.trim\(\)/);
+  assert.doesNotMatch(followUp, /if \(!draft\.summary\.trim\(\)\) return/);
   assert.match(crmApi, /action === "saveLead"/);
   assert.match(crmApi, /action === "saveActivity"/);
+  assert.match(crmApi, /!summary && !outcome && !nextStep/);
   assert.match(crmApi, /converted_opportunity_id/);
   assert.match(database, /prospecting_leads/);
   assert.match(database, /include_in_weekly_report/);
@@ -382,6 +386,20 @@ test("separates outbound leads and reports only selected follow-up history", asy
   assert.doesNotMatch(operations, /opportunities\.filter\(\(item\) => item\.status === "Open"\)\.slice\(0, 6\)/);
   assert.match(operations, /Mở lại chỉnh sửa/);
   assert.match(operations, /const locked = report\.status === "Submitted"/);
+});
+
+test("colors CRM stages consistently across records, pipeline, and the editor", async () => {
+  const [client, styles] = await Promise.all([
+    readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(client, /const stageTone/);
+  assert.match(client, /stage-tone-\$\{stageTone\(item\.stage\)\}/);
+  assert.match(client, /crm-stage-select-\$\{selectedGroup\.key\}/);
+  assert.match(client, /pipeline-column-\$\{column\.key\}/);
+  for (const tone of ["contact", "solution", "quotation", "closing", "nurture", "closed", "lost"]) {
+    assert.match(styles, new RegExp(`\\.stage-tone-${tone}`));
+  }
 });
 
 test("ships the guarded AI campaign center for phase four", async () => {

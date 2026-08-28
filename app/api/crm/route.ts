@@ -242,16 +242,19 @@ async function saveActivity(input: Input) {
   const opportunityId = textValue(input, "opportunityId");
   const activityDate = textValue(input, "activityDate", new Date().toISOString().slice(0, 10));
   const summary = textValue(input, "summary");
+  const outcome = textValue(input, "outcome");
+  const nextStep = textValue(input, "nextStep");
   const rawStatus = textValue(input, "status", "Completed");
   const status = ["Pending", "Completed", "Cancelled"].includes(rawStatus) ? rawStatus : "Completed";
-  if (!opportunityId || !summary) throw new Error("Vui lòng nhập cơ hội và nội dung Follow-up.");
+  if (!opportunityId) throw new Error("Không tìm thấy cơ hội để lưu cập nhật.");
+  if (!summary && !outcome && !nextStep) throw new Error("Hãy nhập Thông tin Follow-up, Kết quả/phản hồi hoặc Next Step.");
   const opportunity = await db.prepare("SELECT id FROM opportunities WHERE id = ?")
     .bind(opportunityId).first<{ id: string }>();
   if (!opportunity) throw new Error("Không tìm thấy cơ hội để lưu Follow-up.");
   const now = new Date().toISOString();
   const values = [
     activityDate, textValue(input, "activityType", "Email"), textValue(input, "contactName"), summary,
-    textValue(input, "outcome"), textValue(input, "nextStep"), textValue(input, "dueDate"),
+    outcome, nextStep, textValue(input, "dueDate"),
     textValue(input, "owner", "Mai Trần Thành"), status, booleanValue(input, "includeInWeeklyReport") ? 1 : 0,
   ];
   if (currentId) {
@@ -269,7 +272,6 @@ async function saveActivity(input: Input) {
     owner, status, include_in_weekly_report, created_at, updated_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(id, opportunityId, ...values, now, now)];
-  const nextStep = textValue(input, "nextStep");
   const dueDate = textValue(input, "dueDate");
   statements.push(db.prepare(`UPDATE opportunities SET last_contact_date = ?, next_step = CASE WHEN ? <> '' THEN ? ELSE next_step END,
     next_step_due = CASE WHEN ? <> '' THEN ? ELSE next_step_due END, updated_at = ? WHERE id = ?`)
