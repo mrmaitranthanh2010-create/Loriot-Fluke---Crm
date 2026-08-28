@@ -1,5 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import type { WeeklyReport, WeeklyProjectItem } from "@/lib/operations";
+import { companyWeekNumber, nextWeekBounds, type WeeklyReport, type WeeklyProjectItem } from "@/lib/operations";
 
 const escapeXml = (value: unknown) => String(value ?? "")
   .replaceAll("&", "&amp;")
@@ -67,9 +67,12 @@ export function generateWeeklyReportXlsx(template: Uint8Array, report: WeeklyRep
   const write = (name: string, value: string) => { files[name] = strToU8(value); };
   let sheetXml = read("xl/worksheets/sheet1.xml");
   if (!sheetXml) throw new Error("Mẫu báo cáo tuần thiếu Sheet1.");
+  const planWeek = nextWeekBounds(report.weekStart);
+  const planWeekNumber = companyWeekNumber(planWeek.weekStart);
 
   const headerValues: Array<[string, string | number]> = [
-    ["C2", reportDateLabel(report.reportDate)], ["C3", report.reporter], ["A5", report.weekNumber],
+    ["C2", reportDateLabel(report.reportDate)], ["C3", report.reporter], ["A5", planWeekNumber],
+    ["B5", `Main Activity · Plan ${formatDate(planWeek.weekStart)} - ${formatDate(planWeek.weekEnd)}`],
   ];
   for (const [reference, value] of headerValues) sheetXml = replaceCell(sheetXml, reference, value);
 

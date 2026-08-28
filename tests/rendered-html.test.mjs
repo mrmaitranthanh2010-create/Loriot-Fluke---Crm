@@ -313,22 +313,28 @@ test("protects the Cloudflare Worker and every CRM API behind a password", async
   assert.match(viteSource, /CRM_AUTH_USERNAME:\s*"mai"/);
 });
 
-test("lays out the Monday-to-Friday plan vertically while preserving the Excel plan order", async () => {
-  const [operations, styles, weeklyExport, weeklyApi, quotationExport] = await Promise.all([
+test("keeps current-week results separate from the following-week plan", async () => {
+  const [operations, operationsModel, styles, weeklyExport, weeklyApi, quotationExport] = await Promise.all([
     readFile(new URL("../app/operations-views.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/operations.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../lib/weekly-report-xlsx.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/weekly-reports/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/quotation-xlsx.ts", import.meta.url), "utf8"),
   ]);
   assert.match(operations, /weekly-day-number/);
-  assert.match(operations, /Thứ tự này được giữ nguyên khi xuất Excel/);
+  assert.match(operations, /WEEKLY PLANNER · TUẦN KẾ TIẾP/);
+  assert.match(operations, /addDays\(planWeek\.weekStart, index\)/);
+  assert.match(operations, /Kết quả công việc tuần/);
   assert.match(operations, /Quy tắc lấy dữ liệu/);
   assert.match(operations, /includeInWeeklyReport/);
+  assert.match(operations, /dateInRange\(activity\.activityDate, report\.weekStart, report\.weekEnd\)/);
+  assert.match(operationsModel, /export function nextWeekBounds/);
   assert.match(styles, /\.weekly-plan-grid \{ display: grid; grid-template-columns: 1fr/);
   assert.match(styles, /grid-template-columns: 150px minmax\(260px, 1\.25fr\) minmax\(300px, \.85fr\)/);
   assert.match(weeklyExport, /report\.plan\.slice\(0, 5\)\.forEach/);
-  assert.match(operations, /companyWeekNumber\(report\.weekStart\)/);
+  assert.match(weeklyExport, /companyWeekNumber\(planWeek\.weekStart\)/);
+  assert.match(weeklyExport, /Main Activity · Plan/);
   assert.match(weeklyApi, /correctLegacyWeekNumber/);
   assert.match(quotationExport, /fitToWidth="1" fitToHeight="1"/);
   assert.match(quotationExport, /quotationRowHeight/);

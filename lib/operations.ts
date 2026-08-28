@@ -81,6 +81,13 @@ export function weekBounds(value = isoDate(new Date())) {
   return { weekStart: isoDate(monday), weekEnd: isoDate(friday) };
 }
 
+export function nextWeekBounds(value: string) {
+  const current = weekBounds(value);
+  const nextMonday = dateOnly(current.weekStart);
+  nextMonday.setDate(nextMonday.getDate() + 7);
+  return weekBounds(isoDate(nextMonday));
+}
+
 export function isoWeekNumber(value: string) {
   const date = dateOnly(value);
   const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
