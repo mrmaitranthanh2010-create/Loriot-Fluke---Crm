@@ -372,6 +372,17 @@ export async function saveCampaign(db: CrmDatabase, input: Input) {
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error("Ngày bắt đầu chiến dịch chưa hợp lệ.");
   if (selectedTemplate && sequenceSteps.length !== 4) throw new Error("Bộ mẫu theo ngành phải có đủ 4 email.");
+  const duplicateCampaign = await db.prepare(`SELECT id, name FROM email_campaigns
+      WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+        AND start_date = ?
+        AND industry_template_id = ?
+        AND status IN ('Draft','Active','Paused')
+      LIMIT 1`)
+    .bind(name, startDate, industryTemplateId)
+    .first<{ id: string; name: string }>();
+  if (duplicateCampaign) {
+    throw new Error(`Đã có chiến dịch “${duplicateCampaign.name}” cùng bộ mẫu và ngày bắt đầu. Hãy dùng chiến dịch hiện có hoặc đổi tên/ngày để tránh gửi trùng.`);
+  }
 
   const leadIds = Array.isArray(input.leadIds)
     ? [...new Set(input.leadIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0))].slice(0, 300)
@@ -426,10 +437,23 @@ export async function setCampaignStatus(db: CrmDatabase, input: Input) {
   const id = textValue(input, "id");
   const status = textValue(input, "status");
   if (!id || !["Active", "Paused"].includes(status)) throw new Error("Trạng thái chiến dịch không hợp lệ.");
-  const campaign = await db.prepare("SELECT id, status FROM email_campaigns WHERE id = ?")
-    .bind(id).first<{ id: string; status: string }>();
+  const campaign = await db.prepare(`SELECT id, name, status, start_date AS startDate,
+      industry_template_id AS industryTemplateId FROM email_campaigns WHERE id = ?`)
+    .bind(id).first<{ id: string; name: string; status: string; startDate: string; industryTemplateId: string }>();
   if (!campaign) throw new Error("Không tìm thấy chiến dịch.");
   if (status === "Active") {
+    const duplicateActive = await db.prepare(`SELECT id FROM email_campaigns
+        WHERE id <> ?
+          AND LOWER(TRIM(name)) = LOWER(TRIM(?))
+          AND start_date = ?
+          AND industry_template_id = ?
+          AND status = 'Active'
+        LIMIT 1`)
+      .bind(id, campaign.name, campaign.startDate, campaign.industryTemplateId)
+      .first<{ id: string }>();
+    if (duplicateActive) {
+      throw new Error("Đã có một chiến dịch giống hệt đang chạy. Hãy tạm dừng hoặc xóa bản trùng trước khi kích hoạt.");
+    }
     const settings = await getAutomationSettings(db);
     if (!settings.enabled) throw new Error("Hãy bật công tắc tự động hóa trước khi kích hoạt chiến dịch.");
     await connectionSettings(db);

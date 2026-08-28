@@ -54,9 +54,10 @@ async function emailFileRequest(input: RequestInit) {
   return data.assets ?? [];
 }
 
-export function EmailOutreachPanel({ leads, onRefresh }: {
+export function EmailOutreachPanel({ leads, onRefresh, section }: {
   leads: Lead[];
   onRefresh: () => Promise<void>;
+  section: "campaigns" | "templates" | "history" | "files";
 }) {
   const [data, setData] = useState<EmailPayload | null>(null);
   const [busy, setBusy] = useState(false);
@@ -312,7 +313,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
   };
 
   const leadById = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
-  const latestMessages = data?.messages.slice(0, 8) ?? [];
+  const latestMessages = data?.messages.slice(0, 50) ?? [];
 
   const openReplyDraft = (message: EmailMessageLog) => {
     if (!message.draftReply || !message.leadId) return;
@@ -348,17 +349,18 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
 
     {feedback && <div className={`email-feedback ${isError ? "error" : "success"}`}>{feedback}</div>}
 
-    {data && <EmailAutomationPanel
+    {data && (section === "campaigns" || section === "templates") && <EmailAutomationPanel
       leads={leads}
       assets={data.assets}
       leadSendStats={data.leadSendStats}
       emailConfigured={data.settings.configured}
+      section={section}
       onChanged={async () => {
         await Promise.all([refreshEmailData(), onRefresh()]);
       }}
     />}
 
-    <section className="email-file-library panel">
+    {section === "files" && <section className="email-file-library panel">
       <header>
         <div>
           <span>KHO TỆP EMAIL</span>
@@ -402,11 +404,11 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
           <button type="button" disabled={uploading} onClick={() => void deleteAsset(asset)} aria-label={`Xóa ${asset.fileName}`}>×</button>
         </div>
       </article>)}</div>}
-    </section>
+    </section>}
 
-    {latestMessages.length > 0 && <section className="email-history panel">
+    {section === "history" && <section className="email-history panel">
       <header><div><span>HOẠT ĐỘNG EMAIL GẦN ĐÂY</span><strong>Lịch sử gửi và phản hồi</strong></div><small>{data?.messages.length || 0} email được lưu</small></header>
-      <div className="email-history-list">{latestMessages.map((message) => {
+      {latestMessages.length === 0 ? <div className="email-file-empty"><strong>Chưa có lịch sử email</strong><span>Email đã gửi và phản hồi nhận được sẽ xuất hiện tại đây.</span></div> : <div className="email-history-list">{latestMessages.map((message) => {
         const lead = leadById.get(message.leadId);
         return <article key={message.id} className={message.classification ? "has-ai-analysis" : ""}>
           <span className={`email-direction ${message.direction}`}>{message.direction === "inbound" ? "↙ Nhận" : "↗ Gửi"}</span>
@@ -418,7 +420,7 @@ export function EmailOutreachPanel({ leads, onRefresh }: {
             {message.draftReply && <button type="button" onClick={() => openReplyDraft(message)}>Dùng bản nháp</button>}
           </div>
         </article>;
-      })}</div>
+      })}</div>}
     </section>}
 
     {settingsOpen && settingsDraft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>

@@ -558,6 +558,30 @@ test("groups email recipients and shows exact send history", async () => {
   assert.match(styles, /campaign-recipient-filters/);
 });
 
+test("simplifies the Lead workspace and prevents duplicate campaigns", async () => {
+  const [leadView, outreach, automationPanel, automationServer, styles] = await Promise.all([
+    readFile(new URL("../app/lead-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/email-outreach-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/email-automation-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/email-automation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(leadView, /Danh sách Lead/);
+  assert.match(leadView, /Kho mẫu mail/);
+  assert.match(leadView, /Lịch sử gửi/);
+  assert.match(leadView, /visibleLeads/);
+  assert.match(leadView, /Số Lead mỗi trang/);
+  assert.match(outreach, /section: "campaigns" \| "templates" \| "history" \| "files"/);
+  assert.match(automationPanel, /Chạy ngay · \$\{analytics\?\.activeCampaigns \|\| 0\} chiến dịch/);
+  assert.match(automationPanel, /campaign-duplicate-warning/);
+  assert.doesNotMatch(automationPanel, />＋ Tạo mới</);
+  assert.match(automationServer, /Đã có chiến dịch/);
+  assert.match(automationServer, /Đã có một chiến dịch giống hệt đang chạy/);
+  assert.match(styles, /\.lead-workspace-tabs/);
+  assert.match(styles, /\.table-pagination/);
+  assert.match(styles, /\.campaign-card\.is-duplicate/);
+});
+
 test("merges High-Touch updates and tracks accepted customer revenue", async () => {
   const [client, productsApi, database] = await Promise.all([
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
