@@ -4,8 +4,8 @@ export const LORIOT_LOGO_DATA_URL = `data:image/png;base64,${LORIOT_LOGO_BASE64}
 export const LORIOT_LOGO_CONTENT_ID = "loriot-logo";
 
 export const LORIOT_SIGNATURE_TEXT = `Thanks and best regards,
-----------------------------------------------------------------------------------------
 Mai Trần Thành (Mr.)
+LORIOT INDUSTRIAL CO., LTD
 T: (+84) 964 72 72 33
 E: hn.sales3@loriot.com.vn`;
 
@@ -18,7 +18,7 @@ const escapeHtml = (value: string) => value
 
 export const stripKnownEmailSignature = (value: string) => value
   .replace(/\n{1,3}Trân trọng,?\s*\nMai Trần Thành\s*\nLoriot Industrial\s*$/i, "")
-  .replace(/\n{1,3}Thanks and best regards,?\s*\n-{8,}\s*\nMai Trần Thành \(Mr\.\)\s*\nT:\s*\(\+84\) 964 72 72 33\s*\nE:\s*hn\.sales3@loriot\.com\.vn\s*$/i, "")
+  .replace(/\n{1,3}Thanks and best regards,?\s*(?:\n-{8,})?\s*\nMai Trần Thành \(Mr\.\)\s*(?:\nLORIOT INDUSTRIAL CO\., LTD)?\s*\nT:\s*\(\+84\) 964 72 72 33\s*\nE:\s*hn\.sales3@loriot\.com\.vn\s*$/i, "")
   .trim();
 
 const bodyHtml = (value: string) => escapeHtml(stripKnownEmailSignature(value))
@@ -41,7 +41,7 @@ export const loriotEmailContent = (body: string, contentImages: BrandedInlineIma
   const cleanBody = stripKnownEmailSignature(body);
   return {
     text: `${cleanBody}\n\n${LORIOT_SIGNATURE_TEXT}`,
-    html: `<div style="max-width:640px;color:#202938;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;">${bodyHtml(cleanBody)}${imageGalleryHtml(contentImages)}<div style="margin-top:24px;color:#1d2736;"><div style="margin-bottom:8px;">Thanks and best regards,</div><div style="width:100%;max-width:520px;border-top:1px solid #b8bdc6;margin:0 0 10px;"></div><div style="font-weight:700;">Mai Trần Thành (Mr.)</div><div><strong>T:</strong> (+84) 964 72 72 33</div><div><strong>E:</strong> <a href="mailto:hn.sales3@loriot.com.vn" style="color:#1b43d8;text-decoration:none;">hn.sales3@loriot.com.vn</a></div><img src="cid:${LORIOT_LOGO_CONTENT_ID}" width="225" height="47" alt="Loriot Industrial" style="display:block;width:225px;height:auto;margin-top:14px;border:0;"></div></div>`,
+    html: `<div style="max-width:640px;color:#202938;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;">${bodyHtml(cleanBody)}${imageGalleryHtml(contentImages)}<div style="margin-top:24px;color:#1d2736;"><div style="margin-bottom:10px;">Thanks and best regards,</div><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;max-width:480px;"><tbody><tr><td width="134" valign="middle" style="width:134px;padding:3px 14px 3px 0;border-right:2px solid #173ee6;"><img src="cid:${LORIOT_LOGO_CONTENT_ID}" width="120" height="25" alt="Loriot Industrial" style="display:block;width:120px;height:auto;border:0;"></td><td valign="middle" style="padding:2px 0 2px 14px;"><div style="color:#172337;font-size:15px;line-height:1.25;font-weight:700;">Mai Trần Thành (Mr.)</div><div style="margin-top:3px;color:#5f6b7e;font-size:10px;line-height:1.35;font-weight:700;letter-spacing:.08em;">LORIOT INDUSTRIAL CO., LTD</div><div style="margin-top:7px;color:#465266;font-size:12px;line-height:1.55;"><strong style="color:#173ee6;">T</strong>&nbsp; (+84) 964 72 72 33<br><strong style="color:#173ee6;">E</strong>&nbsp; <a href="mailto:hn.sales3@loriot.com.vn" style="color:#465266;text-decoration:none;">hn.sales3@loriot.com.vn</a></div></td></tr></tbody></table></div></div>`,
     inlineImages: [...contentImages, {
       contentId: LORIOT_LOGO_CONTENT_ID,
       filename: "loriot-logo.png",

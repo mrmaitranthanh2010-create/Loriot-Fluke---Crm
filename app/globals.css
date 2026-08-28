@@ -597,12 +597,18 @@ td > span { margin-top: 4px; color: #8a94a5; font-size: 8px; }
 .email-file-meta { min-width: 0; }.email-file-meta strong, .email-file-meta span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.email-file-meta strong { color: #344056; font-size: 8px; }.email-file-meta span { margin-top: 4px; color: #8a95a5; font-size: 7px; }
 .email-file-row-actions { display: flex; align-items: center; gap: 3px; }.email-file-row-actions a, .email-file-row-actions button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #8792a2; font-size: 14px; text-decoration: none; transition: border-color .16s ease, background-color .16s ease, color .16s ease; }.email-file-row-actions a:hover { border-color: #d4dbe5; background: #f4f7fa; color: #344056; }.email-file-row-actions button:hover { border-color: #efc9cc; background: #fff1f2; color: #af3239; }
 .email-settings-modal .form-field > small { margin-top: 4px; color: #7c8798; font-size: 8px; line-height: 1.4; }
-.email-signature-preview { padding: 12px 14px; border: 1px solid #e5dfd1; border-radius: 9px; background: #fffdf8; }
-.email-signature-preview > span, .email-signature-preview > strong, .email-signature-preview > small { display: block; }
+.email-signature-preview { padding: 12px 14px 14px; border: 1px solid #e5dfd1; border-radius: 9px; background: #fffdf8; }
+.email-signature-preview > span { display: block; }
 .email-signature-preview > span { color: #9b7b23; font-size: 7px; font-weight: 850; letter-spacing: .1em; }
-.email-signature-preview > strong { margin-top: 7px; color: #182337; font-size: 10px; }
-.email-signature-preview > small { margin-top: 3px; color: #687488; font-size: 8px; }
-.email-signature-logo { width: 150px; height: 32px; margin-top: 9px; background-position: left center; background-repeat: no-repeat; background-size: contain; }
+.email-signature-greeting { margin-top: 8px; color: #465266; font-size: 9px; }
+.email-signature-card { display: flex; align-items: center; width: fit-content; max-width: 100%; margin-top: 7px; }
+.email-signature-logo { flex: 0 0 100px; width: 100px; height: 24px; padding-right: 12px; border-right: 2px solid #173ee6; background-position: left center; background-repeat: no-repeat; background-size: 88px auto; }
+.email-signature-details { min-width: 0; padding-left: 12px; }
+.email-signature-details > strong, .email-signature-details > small { display: block; }
+.email-signature-details > strong { color: #182337; font-size: 10px; line-height: 1.3; }
+.email-signature-details > small { margin-top: 2px; color: #687488; font-size: 8px; line-height: 1.35; }
+.email-signature-details > small b { color: #173ee6; }
+.email-signature-details .email-signature-company { color: #5d687a; font-size: 7px; font-weight: 800; letter-spacing: .06em; }
 .email-history { overflow: hidden; margin-bottom: 12px; }
 .email-history > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e8ebf0; }
 .email-history > header span, .email-history > header strong { display: block; }.email-history > header span { color: #8a94a5; font-size: 7px; font-weight: 850; letter-spacing: .08em; }.email-history > header strong { margin-top: 4px; font-size: 10px; }.email-history > header small { color: #8792a2; font-size: 7px; }

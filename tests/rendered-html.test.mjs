@@ -452,6 +452,10 @@ test("connects the company mailbox and records personalized Lead outreach", asyn
   assert.match(emailBranding, /Mai Trần Thành \(Mr\.\)/);
   assert.match(emailBranding, /hn\.sales3@loriot\.com\.vn/);
   assert.match(emailBranding, /loriot-logo\.png/);
+  assert.match(emailBranding, /role="presentation"/);
+  assert.match(emailBranding, /border-right:2px solid #173ee6/);
+  assert.match(emailBranding, /LORIOT INDUSTRIAL CO\., LTD/);
+  assert.match(panel, /email-signature-card/);
   assert.doesNotMatch(emailApi, /Trân trọng,\nMai Trần Thành\nLoriot Industrial/);
   assert.doesNotMatch(emailApi, /passwordCiphertext.*Response\.json/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS email_messages/);
