@@ -9,11 +9,19 @@ import type {
   EmailLeadSendStat,
   Lead,
 } from "@/lib/crm";
+import {
+  INDUSTRY_EMAIL_TEMPLATES,
+  industryTemplateById,
+  industryTemplateForLead,
+  type EmailIndustryTemplate,
+  type EmailSequenceStep,
+} from "@/lib/industry-email-templates";
 
 type AutomationPayload = {
   automation: EmailAutomationSettings;
   campaigns: EmailCampaign[];
   analytics: EmailAutomationAnalytics;
+  templates: EmailIndustryTemplate[];
   result?: Record<string, unknown>;
   error?: string;
 };
@@ -22,13 +30,10 @@ type CampaignDraft = {
   name: string;
   objective: string;
   industry: string;
+  industryTemplateId: string;
+  industryGroup: string;
   startDate: string;
-  subjectTemplate: string;
-  bodyTemplate: string;
-  followUpEnabled: boolean;
-  followUpDelayDays: number;
-  followUpSubjectTemplate: string;
-  followUpBodyTemplate: string;
+  sequenceSteps: EmailSequenceStep[];
   leadIds: string[];
   assetIds: string[];
 };
@@ -38,14 +43,17 @@ const today = () => new Date().toISOString().slice(0, 10);
 const emptyCampaign = (): CampaignDraft => ({
   name: "",
   objective: "",
-  industry: "Nhà máy sản xuất công nghiệp",
+  industry: "",
+  industryTemplateId: "",
+  industryGroup: "",
   startDate: today(),
-  subjectTemplate: "Giải pháp thiết bị đo Fluke cho {{companyName}}",
-  bodyTemplate: "",
-  followUpEnabled: true,
-  followUpDelayDays: 4,
-  followUpSubjectTemplate: "Re: Giải pháp thiết bị đo Fluke cho {{companyName}}",
-  followUpBodyTemplate: "",
+  sequenceSteps: [{
+    order: 1,
+    label: "Tiếp cận ban đầu",
+    delayDays: 0,
+    subjectTemplate: "Giải pháp thiết bị đo Fluke cho {{companyName}}",
+    bodyTemplate: "",
+  }],
   leadIds: [],
   assetIds: [],
 });
@@ -104,6 +112,7 @@ export function EmailAutomationPanel({
   const [campaignOpen, setCampaignOpen] = useState(false);
   const [draft, setDraft] = useState<CampaignDraft>(emptyCampaign());
   const [leadSearch, setLeadSearch] = useState("");
+  const [leadIndustryGroup, setLeadIndustryGroup] = useState("");
   const [leadIndustry, setLeadIndustry] = useState("");
   const [leadHistory, setLeadHistory] = useState<"all" | "never" | "sent">("all");
   const [busy, setBusy] = useState(false);
@@ -190,6 +199,7 @@ export function EmailAutomationPanel({
     if (!lead.email || lead.emailOptOut || lead.status === "Không nhận email" || lead.status === "Đã chuyển cơ hội") return false;
     const query = normalize(leadSearch.trim());
     const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
+    if (leadIndustryGroup && industryTemplateForLead(lead.industry)?.id !== leadIndustryGroup) return false;
     if (leadIndustry && lead.industry !== leadIndustry) return false;
     if (leadHistory === "never" && sentCount > 0) return false;
     if (leadHistory === "sent" && sentCount === 0) return false;
@@ -204,15 +214,72 @@ export function EmailAutomationPanel({
       return (aStat?.lastSentAt || "").localeCompare(bStat?.lastSentAt || "");
     }
     return a.companyName.localeCompare(b.companyName, "vi");
-  }), [leadHistory, leadIndustry, leadSearch, leads, sendStatsByLead]);
+  }), [leadHistory, leadIndustry, leadIndustryGroup, leadSearch, leads, sendStatsByLead]);
+
+  const templates = data?.templates?.length ? data.templates : INDUSTRY_EMAIL_TEMPLATES;
+
+  const matchingLeadCount = (templateId: string) => leads.filter((lead) => {
+    const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
+    return Boolean(lead.email)
+      && !lead.emailOptOut
+      && lead.status !== "Không nhận email"
+      && lead.status !== "Đã chuyển cơ hội"
+      && sentCount === 0
+      && industryTemplateForLead(lead.industry)?.id === templateId;
+  }).length;
+
+  const applyIndustryTemplate = (template: EmailIndustryTemplate) => {
+    const leadIds = leads.filter((lead) => {
+      const sentCount = Number(sendStatsByLead.get(lead.id)?.sentCount || 0);
+      return Boolean(lead.email)
+        && !lead.emailOptOut
+        && lead.status !== "Không nhận email"
+        && lead.status !== "Đã chuyển cơ hội"
+        && sentCount === 0
+        && industryTemplateForLead(lead.industry)?.id === template.id;
+    }).slice(0, 300).map((lead) => lead.id);
+    setDraft({
+      ...emptyCampaign(),
+      name: `Chiến dịch Fluke – ${template.groupName}`,
+      objective: template.description,
+      industry: template.groupName,
+      industryTemplateId: template.id,
+      industryGroup: template.groupName,
+      sequenceSteps: template.steps.map((step) => ({ ...step })),
+      leadIds,
+    });
+    setLeadSearch("");
+    setLeadIndustryGroup(template.id);
+    setLeadIndustry("");
+    setLeadHistory("never");
+    setFormError(leadIds.length ? "" : "Chưa có Lead mới thuộc nhóm này có địa chỉ email hợp lệ.");
+  };
 
   const openCampaign = () => {
     setDraft(emptyCampaign());
     setLeadSearch("");
+    setLeadIndustryGroup("");
     setLeadIndustry("");
     setLeadHistory("all");
     setFormError("");
     setCampaignOpen(true);
+  };
+
+  const openTemplateCampaign = (template: EmailIndustryTemplate) => {
+    applyIndustryTemplate(template);
+    setCampaignOpen(true);
+  };
+
+  const chooseIndustryTemplate = (id: string) => {
+    const template = industryTemplateById(id);
+    if (template) applyIndustryTemplate(template);
+  };
+
+  const updateSequenceStep = (index: number, values: Partial<EmailSequenceStep>) => {
+    setDraft((current) => ({
+      ...current,
+      sequenceSteps: current.sequenceSteps.map((step, stepIndex) => stepIndex === index ? { ...step, ...values } : step),
+    }));
   };
 
   const toggleLead = (id: string) => setDraft((current) => ({
@@ -247,10 +314,15 @@ export function EmailAutomationPanel({
       setDraft((current) => ({
         ...current,
         name: String(next.result?.name || current.name),
-        subjectTemplate: String(next.result?.subject || current.subjectTemplate),
-        bodyTemplate: String(next.result?.body || current.bodyTemplate),
-        followUpSubjectTemplate: String(next.result?.followUpSubject || current.followUpSubjectTemplate),
-        followUpBodyTemplate: String(next.result?.followUpBody || current.followUpBodyTemplate),
+        sequenceSteps: current.sequenceSteps.map((step, index) => index === 0 ? {
+          ...step,
+          subjectTemplate: String(next.result?.subject || step.subjectTemplate),
+          bodyTemplate: String(next.result?.body || step.bodyTemplate),
+        } : index === 1 ? {
+          ...step,
+          subjectTemplate: String(next.result?.followUpSubject || step.subjectTemplate),
+          bodyTemplate: String(next.result?.followUpBody || step.bodyTemplate),
+        } : step),
       }));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "AI chưa thể soạn chiến dịch.");
@@ -344,12 +416,29 @@ export function EmailAutomationPanel({
       </div>}
       <div className="automation-last-run">Lần chạy gần nhất: <strong>{displayTime(analytics?.lastRunAt || "")}</strong> · {analytics?.lastRunStatus || "Chưa chạy"}</div>
 
+      <section className="email-template-library">
+        <header className="template-library-header">
+          <div><span>KHO MAIL THEO NHÓM NGÀNH</span><strong>6 bộ mẫu · 24 email cá nhân hóa</strong><small>Chọn một nhóm để nạp 4 email và tự chọn các Lead mới có email thuộc đúng ngành.</small></div>
+          <em>Nháp trước · Kích hoạt sau</em>
+        </header>
+        <div className="template-library-grid">{templates.map((template) => {
+          const count = matchingLeadCount(template.id);
+          return <article key={template.id} className="industry-template-card">
+            <div className="template-card-top"><span>{String(template.steps.length).padStart(2, "0")} EMAIL</span><b>{count} Lead mới</b></div>
+            <strong>{template.groupName}</strong>
+            <p>{template.description}</p>
+            <div className="template-step-count"><span>Ngày 0</span><i>→</i><span>+3</span><i>→</i><span>+5</span><i>→</i><span>+7</span></div>
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => openTemplateCampaign(template)}>Dùng bộ mẫu</button>
+          </article>;
+        })}</div>
+      </section>
+
       <div className="campaign-list">
         {!data?.campaigns.length ? <div className="automation-empty"><strong>Chưa có chiến dịch</strong><span>Tạo một chiến dịch, kiểm tra nội dung rồi mới kích hoạt lịch gửi.</span></div> : data.campaigns.map((campaign, index) => {
           const replyRate = campaign.sentRecipients ? campaign.repliedRecipients / campaign.sentRecipients : 0;
           return <article key={campaign.id} className={`campaign-card status-${campaign.status.toLowerCase()}`}>
             <div className="campaign-index">{String(index + 1).padStart(2, "0")}</div>
-            <div className="campaign-main"><div><span className={`campaign-status ${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span><strong>{campaign.name}</strong></div><p>{campaign.objective}</p><small>Bắt đầu {displayDate(campaign.startDate)} · {campaign.followUpEnabled ? `2 email, Follow-up sau ${campaign.followUpDelayDays} ngày` : "1 email"}</small></div>
+            <div className="campaign-main"><div><span className={`campaign-status ${campaign.status.toLowerCase()}`}>{campaignStatus(campaign.status)}</span><strong>{campaign.name}</strong></div><p>{campaign.objective}</p><small>Bắt đầu {displayDate(campaign.startDate)} · {campaign.industryGroup ? `${campaign.industryGroup} · ` : ""}{campaign.sequenceSteps.length || (campaign.followUpEnabled ? 2 : 1)} email</small></div>
             <div className="campaign-stats"><span><b>{campaign.totalRecipients}</b> Lead</span><span><b>{campaign.sentRecipients}</b> đã gửi</span><span><b>{campaign.repliedRecipients}</b> phản hồi</span><span><b>{(replyRate * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%</b> tỷ lệ</span></div>
             <div className="campaign-actions">
               {campaign.status !== "Active" && campaign.status !== "Completed" && <button className="primary-button" disabled={busy} onClick={() => void changeCampaignStatus(campaign, "Active")}>Kích hoạt</button>}
@@ -370,12 +459,16 @@ export function EmailAutomationPanel({
             <div className="form-grid">
               <label className="form-field"><span>Tên chiến dịch <b>*</b></span><input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
               <label className="form-field"><span>Ngày bắt đầu</span><input type="date" min={today()} value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })}/></label>
+              <label className="form-field field-wide"><span>Bộ mẫu email theo nhóm ngành <b>*</b></span><select required value={draft.industryTemplateId} onChange={(event) => chooseIndustryTemplate(event.target.value)}><option value="">Chọn một trong 6 nhóm ngành</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.groupName} · 4 email</option>)}</select><small>Khi chọn nhóm, hệ thống tự nạp nội dung và chọn các Lead mới phù hợp.</small></label>
               <label className="form-field field-wide"><span>Mục tiêu chiến dịch <b>*</b></span><textarea rows={3} required value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} placeholder="Ví dụ: giới thiệu camera nhiệt Fluke cho bộ phận bảo trì nhà máy..."/></label>
-              <label className="form-field field-wide"><span>Ngành/nhóm khách hàng</span><input value={draft.industry} onChange={(event) => setDraft({ ...draft, industry: event.target.value })}/></label>
+              <label className="form-field field-wide"><span>Ngành/nhóm khách hàng</span><input readOnly value={draft.industry} placeholder="Được điền từ bộ mẫu đã chọn"/></label>
             </div>
-            <div className="campaign-step"><header><span>EMAIL 1</span><strong>Tiếp cận ban đầu</strong></header><label className="form-field"><span>Tiêu đề</span><input required value={draft.subjectTemplate} onChange={(event) => setDraft({ ...draft, subjectTemplate: event.target.value })}/></label><label className="form-field"><span>Nội dung</span><textarea rows={10} required value={draft.bodyTemplate} onChange={(event) => setDraft({ ...draft, bodyTemplate: event.target.value })}/></label></div>
-            <div className="campaign-step followup"><header><label><input type="checkbox" checked={draft.followUpEnabled} onChange={(event) => setDraft({ ...draft, followUpEnabled: event.target.checked })}/><span>EMAIL 2</span><strong>Follow-up tự động nếu chưa phản hồi</strong></label><div><span>Sau</span><input type="number" min={1} max={30} value={draft.followUpDelayDays} onChange={(event) => setDraft({ ...draft, followUpDelayDays: Number(event.target.value) })}/><span>ngày</span></div></header>{draft.followUpEnabled && <><label className="form-field"><span>Tiêu đề Follow-up</span><input required value={draft.followUpSubjectTemplate} onChange={(event) => setDraft({ ...draft, followUpSubjectTemplate: event.target.value })}/></label><label className="form-field"><span>Nội dung Follow-up</span><textarea rows={8} required value={draft.followUpBodyTemplate} onChange={(event) => setDraft({ ...draft, followUpBodyTemplate: event.target.value })}/></label></>}</div>
-            <p className="email-token-help">Có thể dùng: {"{{companyName}}"}, {"{{contactName}}"}, {"{{salutation}}"}, {"{{title}}"}, {"{{industry}}"}</p>
+            {draft.sequenceSteps.map((step, index) => <div key={step.order} className={`campaign-step ${index ? "followup" : ""}`}>
+              <header><div className="campaign-step-name"><span>EMAIL {step.order}</span><strong>{step.label}</strong></div>{index > 0 && <div><span>Gửi sau email trước</span><input aria-label={`Số ngày chờ Email ${step.order}`} type="number" min={1} max={30} value={step.delayDays} onChange={(event) => updateSequenceStep(index, { delayDays: Number(event.target.value) })}/><span>ngày</span></div>}</header>
+              <label className="form-field"><span>Tiêu đề</span><input required value={step.subjectTemplate} onChange={(event) => updateSequenceStep(index, { subjectTemplate: event.target.value })}/></label>
+              <label className="form-field"><span>Nội dung</span><textarea rows={index ? 8 : 10} required value={step.bodyTemplate} onChange={(event) => updateSequenceStep(index, { bodyTemplate: event.target.value })}/></label>
+            </div>)}
+            <p className="email-token-help">Có thể dùng: {"{{companyName}}"}, {"{{plantSite}}"}, {"{{targetDepartment}}"}, {"{{recommendedSolution}}"}, {"{{contactName}}"}, {"{{title}}"}, {"{{industry}}"}</p>
           </section>
 
           <aside className="campaign-form-side">
@@ -383,7 +476,8 @@ export function EmailAutomationPanel({
               <header><div><strong>Lead nhận email</strong><small>Lọc theo ngành và lịch sử gửi · tối đa 300 Lead</small></div><span>{draft.leadIds.length} đã chọn</span></header>
               <div className="campaign-recipient-filters">
                 <input aria-label="Tìm Lead trong chiến dịch" value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Tìm công ty, email, ngành..."/>
-                <select aria-label="Lọc ngành cho chiến dịch" value={leadIndustry} onChange={(event) => setLeadIndustry(event.target.value)}><option value="">Tất cả nhóm ngành</option>{leadIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
+                <select aria-label="Lọc Lead theo bộ mẫu ngành" value={leadIndustryGroup} onChange={(event) => setLeadIndustryGroup(event.target.value)}><option value="">Tất cả 6 nhóm ngành</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.groupName}</option>)}</select>
+                <select aria-label="Lọc ngành chi tiết cho chiến dịch" value={leadIndustry} onChange={(event) => setLeadIndustry(event.target.value)}><option value="">Tất cả ngành chi tiết</option>{leadIndustries.map((industry) => <option key={industry} value={industry}>{industry}</option>)}</select>
                 <select aria-label="Lọc lịch sử gửi cho chiến dịch" value={leadHistory} onChange={(event) => setLeadHistory(event.target.value as "all" | "never" | "sent")}><option value="all">Tất cả lịch sử</option><option value="never">Chưa gửi lần nào</option><option value="sent">Đã từng gửi</option></select>
               </div>
               <div className="campaign-recipient-toolbar"><span>{eligibleLeads.length} công ty</span><div><button type="button" onClick={() => setDraft({ ...draft, leadIds: eligibleLeads.slice(0, 300).map((lead) => lead.id) })}>Chọn nhóm đang hiển thị</button><button type="button" onClick={() => setDraft({ ...draft, leadIds: [] })} disabled={!draft.leadIds.length}>Bỏ chọn</button></div></div>
