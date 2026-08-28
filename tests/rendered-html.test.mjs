@@ -423,11 +423,17 @@ test("ships the guarded AI campaign center for phase four", async () => {
   assert.match(panel, /Mặc định an toàn/);
   assert.match(panel, /window\.confirm/);
   assert.match(panel, /AI không tự gửi bản nháp trả lời/);
+  assert.match(panel, /Kích hoạt chiến dịch trước/);
+  assert.match(panel, /✓ Đã gửi \$\{sent\} email/);
+  assert.match(panel, /Không có email được gửi/);
+  assert.match(panel, /lastRunSummary/);
   assert.match(automationApi, /action === "draftCampaignWithAi"/);
   assert.match(automationApi, /action === "runNow"/);
   assert.match(automation, /dailyLimit/);
   assert.match(automation, /batchSize/);
   assert.match(automation, /Tự động hóa đang tắt/);
+  assert.match(automation, /lastRunSent/);
+  assert.match(automation, /error_message AS message/);
   assert.match(automation, /status IN \('Queued','Awaiting','Completed'\)/);
   assert.match(automation, /Từ chối nhận email/);
   assert.match(database, /VALUES \('primary', 0, 20, 2, 8, 17, 1, 1/);
