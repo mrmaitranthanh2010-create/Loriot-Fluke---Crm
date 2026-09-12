@@ -40,6 +40,8 @@ yarn-error.log*
 /work/
 /.downloads/
 /.pnpm-cache/
+/.pnpm-dlx-cache/
+/.npm-cache/
 /.pnpm-store/
 /pnpm-lock.yaml
 /pnpm-workspace.yaml

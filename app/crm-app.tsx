@@ -22,6 +22,7 @@ import { LeadView, type LeadDraft } from "@/app/lead-view";
 import { FollowUpPanel, type ActivityDraft } from "@/app/follow-up-panel";
 import { generateQuotationXlsx } from "@/lib/quotation-xlsx";
 import { InventoryView, WeeklyReportsView } from "@/app/operations-views";
+import { SalesAiPanel } from "@/app/sales-ai-panel";
 import { parseHighTouchXlsx, parsePriceListXlsx, parseQuotationWorkbookXlsx, parseTargetLeadsXlsx } from "@/lib/product-xlsx";
 import {
   calculateVndPrice,
@@ -584,6 +585,7 @@ export function CrmApp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [salesAiOpen, setSalesAiOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -1096,6 +1098,7 @@ export function CrmApp() {
             </button>
           </section>}
         </div>
+        <button className="sales-ai-trigger" type="button" onClick={() => setSalesAiOpen(true)}><span>✦</span><strong>Trợ lý AI</strong></button>
         <button className="primary-button" onClick={openCreate}><Icon name="plus" size={18}/>Thêm cơ hội</button>
       </header>
 
@@ -1167,6 +1170,8 @@ export function CrmApp() {
     </main>
 
     <nav className="mobile-nav">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon name={item.icon} size={19}/><span>{item.label}</span></button>)}</nav>
+
+    <SalesAiPanel open={salesAiOpen} view={view} onClose={() => setSalesAiOpen(false)} />
 
     {modalOpen && <OpportunityModal
       draft={draft}

@@ -11,5 +11,19 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LoriotSalesAgent",
+        "class_name": "LoriotSalesAgent"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["LoriotSalesAgent"]
+    }
+  ]
 }

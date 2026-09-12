@@ -1,4 +1,8 @@
 import handler from "vinext/server/app-router-entry";
+import { routeAgentRequest } from "agents";
+import { LoriotSalesAgent } from "./sales-agent";
+
+export { LoriotSalesAgent };
 
 type HandlerEnv = NonNullable<Parameters<typeof handler.fetch>[1]>;
 type HandlerContext = NonNullable<Parameters<typeof handler.fetch>[2]>;
@@ -61,6 +65,9 @@ const worker = {
     const expected = `Basic ${utf8Base64(`${username}:${password}`)}`;
     const provided = request.headers.get("Authorization") || "";
     if (!constantTimeEqual(provided, expected)) return unauthorized();
+
+    const agentResponse = await routeAgentRequest(request, env);
+    if (agentResponse) return agentResponse;
 
     return handler.fetch(request, env, ctx);
   },
