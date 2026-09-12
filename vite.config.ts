@@ -17,7 +17,7 @@ const localBindingConfig = {
   assets: { binding: "ASSETS" },
   ai: { binding: "AI" },
   triggers: { crons: ["*/15 * * * *"] },
-  vars: { CRM_AUTH_USERNAME: "mai" },
+  vars: { CRM_AUTH_USERNAME: "maithanh" },
   d1_databases: d1
     ? [
         {
