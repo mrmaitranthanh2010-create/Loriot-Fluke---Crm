@@ -282,6 +282,31 @@ test("cancels stale product and inventory searches while typing", async () => {
   assert.match(operations, /error instanceof DOMException && error\.name === "AbortError"/);
 });
 
+test("adds a stateful, human-approved sales AI agent to the CRM", async () => {
+  const [worker, agent, panel, config, client] = await Promise.all([
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/sales-agent.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/sales-ai-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(worker, /routeAgentRequest/);
+  assert.match(worker, /LoriotSalesAgent/);
+  assert.match(agent, /extends Agent<SalesAgentEnv, SalesAgentState>/);
+  assert.match(agent, /buildCrmContext/);
+  assert.match(agent, /Không tự gửi email, không tự tạo\/sửa\/xóa CRM/);
+  assert.match(agent, /country_of_origin AS origin/);
+  assert.match(agent, /high_touch AS highTouch/);
+  assert.match(agent, /sales-agent-history/);
+  assert.match(config, /"LoriotSalesAgent"/);
+  assert.match(config, /"new_sqlite_classes": \["LoriotSalesAgent"\]/);
+  assert.match(panel, /\/agents\/LoriotSalesAgent\/mai-tran-thanh/);
+  assert.match(panel, /Trợ lý Sales AI/);
+  assert.match(panel, /Trợ lý AI đang chưa kết nối/);
+  assert.match(client, /SalesAiPanel/);
+  assert.match(client, /Trợ lý AI/);
+});
+
 test("turns the notification bell into an urgent-work center", async () => {
   const [client, styles] = await Promise.all([
     readFile(new URL("../app/crm-app.tsx", import.meta.url), "utf8"),
