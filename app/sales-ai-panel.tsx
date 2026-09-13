@@ -31,7 +31,7 @@ const initialMessage: SalesAgentMessage = {
 
 const socketUrl = () => {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/agents/LoriotSalesAgent/mai-tran-thanh`;
+  return `${protocol}//${window.location.host}/agents/loriot-sales-agent/mai-tran-thanh`;
 };
 
 export function SalesAiPanel({ open, view, onClose }: PanelProps) {
@@ -45,6 +45,8 @@ export function SalesAiPanel({ open, view, onClose }: PanelProps) {
 
   useEffect(() => {
     if (!open) return;
+    setStatus("connecting");
+    setError("");
     const socket = new WebSocket(socketUrl());
     socketRef.current = socket;
     socket.onopen = () => {
