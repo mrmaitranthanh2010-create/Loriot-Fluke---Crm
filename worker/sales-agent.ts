@@ -91,7 +91,7 @@ const conversationForPrompt = (messages: SalesAgentMessage[]) => messages
 
 async function buildCrmContext(db: SalesDatabase, question: string) {
   const today = new Date().toISOString().slice(0, 10);
-  const normalizedQuestion = normalizeForSearch(question).slice(0, 120);
+  // D1 limits the complexity of LIKE patterns. Keep the lookup key short while\n  // still sending the complete question to Workers AI below.\n  const normalizedQuestion = normalizeForSearch(question).slice(0, 40);
   const containsProductQuestion = /model|fluke|logcard|high.?touch|gia|price|xuat xu|origin|bao hanh|warranty/i.test(question);
   const containsQuoteQuestion = /bao gia|quotation|quote|don hang|doanh so|revenue/i.test(question);
   const candidates = modelCandidates(question);
