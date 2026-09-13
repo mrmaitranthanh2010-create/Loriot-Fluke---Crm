@@ -300,7 +300,11 @@ test("adds a stateful, human-approved sales AI agent to the CRM", async () => {
   assert.match(agent, /sales-agent-history/);
   assert.match(config, /"LoriotSalesAgent"/);
   assert.match(config, /"new_sqlite_classes": \["LoriotSalesAgent"\]/);
-  assert.match(panel, /\/agents\/LoriotSalesAgent\/mai-tran-thanh/);
+  assert.match(panel, /\/agents\/loriot-sales-agent\/mai-tran-thanh/);
+  assert.doesNotMatch(panel, /\/agents\/LoriotSalesAgent\//);
+  assert.match(agent, /@cf\/meta\/llama-3\.1-8b-instruct-fast/);
+  assert.doesNotMatch(agent, /@cf\/google\/gemma-3-12b-it/);
+  assert.match(agent, /normalizeForSearch\(question\)\.slice\(0, 40\)/);
   assert.match(panel, /Trợ lý Sales AI/);
   assert.match(panel, /Trợ lý AI đang chưa kết nối/);
   assert.match(client, /SalesAiPanel/);
