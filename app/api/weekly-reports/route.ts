@@ -1,5 +1,5 @@
 import { ensureDatabase } from "@/db";
-import { companyWeekNumber, emptyWeeklyReport, isoWeekNumber, type WeeklyPlanItem, type WeeklyProjectItem, type WeeklyReport, type WeeklyReportSummary } from "@/lib/operations";
+import { companyWeekNumber, emptyWeeklyReport, isoWeekNumber, previousWeekBounds, weekBounds, workWeekBounds, type WeeklyPlanItem, type WeeklyProjectItem, type WeeklyReport, type WeeklyReportSummary } from "@/lib/operations";
 
 type Input = Record<string, unknown>;
 type WeeklyRow = Omit<WeeklyReport, "plan" | "projects"> & { planJson: string; projectsJson: string };
@@ -29,10 +29,26 @@ const rowToReport = (row: WeeklyRow): WeeklyReport => ({
   projects: parseJson<WeeklyProjectItem[]>(row.projectsJson, []),
 });
 
-const correctLegacyWeekNumber = <T extends { weekStart: string; weekNumber: number }>(report: T): T =>
-  report.weekNumber === isoWeekNumber(report.weekStart)
-    ? { ...report, weekNumber: companyWeekNumber(report.weekStart) }
-    : report;
+const correctLegacyReport = <T extends { weekStart: string; weekEnd: string; reportDate: string; weekNumber: number }>(report: T): T => {
+  const fullWeek = weekBounds(report.weekStart);
+  const legacyFriday = workWeekBounds(report.weekStart).weekEnd;
+  return {
+    ...report,
+    weekEnd: fullWeek.weekEnd,
+    reportDate: report.reportDate === legacyFriday ? fullWeek.weekEnd : report.reportDate,
+    weekNumber: report.weekNumber === isoWeekNumber(report.weekStart) ? companyWeekNumber(report.weekStart) : report.weekNumber,
+  };
+};
+
+const planHasContent = (plan: WeeklyPlanItem[]) => plan.some((item) =>
+  item.mainActivity.trim() || item.remarks.trim() || (item.location.trim() && item.location.trim() !== "Văn phòng"));
+
+const inheritPlan = (defaults: WeeklyPlanItem[], previous: WeeklyPlanItem[]) => defaults.map((item, index) => ({
+  ...item,
+  mainActivity: typeof previous[index]?.mainActivity === "string" ? previous[index].mainActivity : "",
+  location: typeof previous[index]?.location === "string" && previous[index].location.trim() ? previous[index].location : "Văn phòng",
+  remarks: typeof previous[index]?.remarks === "string" ? previous[index].remarks : "",
+}));
 
 async function loadReport(request: Request) {
   const db = await ensureDatabase();
@@ -43,12 +59,25 @@ async function loadReport(request: Request) {
       week_number AS weekNumber, reporter, status, source_file AS sourceFile, plan_json AS planJson,
       projects_json AS projectsJson, created_at AS createdAt, updated_at AS updatedAt
     FROM weekly_reports WHERE week_start = ?`).bind(empty.weekStart).first<WeeklyRow>();
+  let report = row ? correctLegacyReport(rowToReport(row)) : empty;
+  let planInheritedFrom = "";
+  if (report.status !== "Submitted" && !planHasContent(report.plan)) {
+    const previousWeek = previousWeekBounds(empty.weekStart);
+    const previousRow = await db.prepare(`SELECT plan_json AS planJson FROM weekly_reports WHERE week_start = ?`)
+      .bind(previousWeek.weekStart).first<Pick<WeeklyRow, "planJson">>();
+    const previousPlan = previousRow ? parseJson<WeeklyPlanItem[]>(previousRow.planJson, []) : [];
+    if (planHasContent(previousPlan)) {
+      report = { ...report, plan: inheritPlan(empty.plan, previousPlan) };
+      planInheritedFrom = previousWeek.weekStart;
+    }
+  }
   const recent = await db.prepare(`SELECT id, week_start AS weekStart, week_end AS weekEnd, report_date AS reportDate,
       week_number AS weekNumber, status, updated_at AS updatedAt FROM weekly_reports ORDER BY week_start DESC LIMIT 16`)
     .all<WeeklyReportSummary>();
   return {
-    report: row ? correctLegacyWeekNumber(rowToReport(row)) : empty,
-    recent: (recent.results ?? []).map(correctLegacyWeekNumber),
+    report,
+    recent: (recent.results ?? []).map(correctLegacyReport),
+    planInheritedFrom,
   };
 }
 

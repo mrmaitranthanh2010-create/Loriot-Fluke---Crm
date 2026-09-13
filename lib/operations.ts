@@ -76,16 +76,31 @@ export function weekBounds(value = isoDate(new Date())) {
   const offsetToMonday = day === 0 ? -6 : 1 - day;
   const monday = new Date(date);
   monday.setDate(date.getDate() + offsetToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { weekStart: isoDate(monday), weekEnd: isoDate(sunday) };
+}
+
+export function workWeekBounds(value = isoDate(new Date())) {
+  const { weekStart } = weekBounds(value);
+  const monday = dateOnly(weekStart);
   const friday = new Date(monday);
   friday.setDate(monday.getDate() + 4);
-  return { weekStart: isoDate(monday), weekEnd: isoDate(friday) };
+  return { weekStart, weekEnd: isoDate(friday) };
 }
 
 export function nextWeekBounds(value: string) {
   const current = weekBounds(value);
   const nextMonday = dateOnly(current.weekStart);
   nextMonday.setDate(nextMonday.getDate() + 7);
-  return weekBounds(isoDate(nextMonday));
+  return workWeekBounds(isoDate(nextMonday));
+}
+
+export function previousWeekBounds(value: string) {
+  const current = weekBounds(value);
+  const previousMonday = dateOnly(current.weekStart);
+  previousMonday.setDate(previousMonday.getDate() - 7);
+  return weekBounds(isoDate(previousMonday));
 }
 
 export function isoWeekNumber(value: string) {

@@ -13,7 +13,13 @@ const formatDate = (value: string) => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 };
 
-const reportDateLabel = (value: string) => `Friday, ${formatDate(value)}`;
+const reportDateLabel = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const weekday = weekdays[new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay()];
+  return `${weekday}, ${formatDate(value)}`;
+};
 
 const cellPattern = (reference: string) => new RegExp(
   `<c\\b(?=[^>]*\\br="${reference}")[^>]*/\\s*>|<c\\b(?=[^>]*\\br="${reference}")[^>]*>[\\s\\S]*?<\\/c>`,

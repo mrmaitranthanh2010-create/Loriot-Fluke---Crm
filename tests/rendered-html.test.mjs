@@ -19,6 +19,66 @@ async function render() {
   );
 }
 
+test("uses an in-app login page and a secure signed session cookie", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("login-test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const env = {
+    ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+    CRM_AUTH_USERNAME: "mai",
+    CRM_AUTH_PASSWORD: "test-password",
+  };
+  const ctx = { waitUntil() {}, passThroughOnException() {} };
+
+  const loginPageResponse = await worker.fetch(
+    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    env,
+    ctx,
+  );
+  assert.equal(loginPageResponse.status, 200);
+  assert.equal(loginPageResponse.headers.get("www-authenticate"), null);
+  assert.match(await loginPageResponse.text(), /Đăng nhập CRM/);
+
+  const invalidLoginResponse = await worker.fetch(
+    new Request("http://localhost/__auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: "mai", password: "not-the-password" }),
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(invalidLoginResponse.status, 401);
+  assert.match(await invalidLoginResponse.text(), /mật khẩu chưa đúng/);
+
+  const loginResponse = await worker.fetch(
+    new Request("http://localhost/__auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: "mai", password: "test-password" }),
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(loginResponse.status, 303);
+  assert.equal(loginResponse.headers.get("location"), "/");
+  const setCookie = loginResponse.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /^loriot_crm_session=/);
+  assert.match(setCookie, /HttpOnly/);
+  assert.match(setCookie, /Secure/);
+  assert.match(setCookie, /SameSite=Lax/);
+
+  const authenticatedResponse = await worker.fetch(
+    new Request("http://localhost/", {
+      headers: { accept: "text/html", cookie: setCookie.split(";")[0] },
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(authenticatedResponse.status, 200);
+  assert.match(await authenticatedResponse.text(), /Đang mở Loriot CRM/);
+});
+
 test("server-renders the branded Loriot CRM loading shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
@@ -326,23 +386,61 @@ test("turns the notification bell into an urgent-work center", async () => {
   assert.match(styles, /\.notification-item:hover/);
 });
 
-test("protects the Cloudflare Worker and every CRM API behind a password", async () => {
+test("protects the Cloudflare Worker and every CRM API behind an in-app login", async () => {
   const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
   const viteSource = await readFile(new URL("../vite.config.ts", import.meta.url), "utf8");
 
   assert.match(workerSource, /CRM_AUTH_PASSWORD/);
-  assert.match(workerSource, /WWW-Authenticate/);
-  assert.match(workerSource, /constantTimeEqual/);
+  assert.match(workerSource, /loriot_crm_session/);
+  assert.match(workerSource, /timingSafeEqual/);
+  assert.match(workerSource, /Đăng nhập CRM/);
+  assert.doesNotMatch(workerSource, /WWW-Authenticate/);
   assert.match(workerSource, /isPublicStaticAsset/);
   assert.match(
     await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
     /"run_worker_first"\s*:\s*\["\/\*",\s*"!\/_next\/static\/\*",\s*"!\/favicon\.svg"\]/,
   );
   assert.match(workerSource, /\/_next\/static\//);
-  assert.match(viteSource, /CRM_AUTH_USERNAME:\s*"mai"/);
+  assert.doesNotMatch(viteSource, /CRM_AUTH_USERNAME:\s*"maithanh"/);
+  assert.match(viteSource, /keep_vars:\s*true/);
 });
 
-test("keeps current-week results separate from the following-week plan", async () => {
+test("exposes a safe health check and schedules daily R2 backups", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("health-test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const response = await worker.fetch(
+    new Request("http://localhost/__health"),
+    {
+      DB: { prepare: () => ({ first: async () => ({ healthy: 1 }) }) },
+      EMAIL_FILES: {
+        head: async () => ({ customMetadata: { completedAt: "2026-09-13T01:20:00.000Z" } }),
+      },
+    },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(response.status, 200);
+  const health = await response.json();
+  assert.equal(health.status, "ok");
+  assert.equal(health.database, "ok");
+  assert.equal(health.backup, "ok");
+  assert.equal(health.lastBackupAt, "2026-09-13T01:20:00.000Z");
+  assert.match(health.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+
+  const [workerSource, backupSource, viteSource] = await Promise.all([
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/data-backup.ts", import.meta.url), "utf8"),
+    readFile(new URL("../vite.config.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(workerSource, /url\.pathname === "\/__health"/);
+  assert.match(workerSource, /createD1Backup/);
+  assert.match(backupSource, /BACKUPS_TO_KEEP = 90/);
+  assert.match(backupSource, /CompressionStream\("gzip"\)/);
+  assert.match(backupSource, /createMultipartUpload/);
+  assert.match(viteSource, /"20 18 \* \* \*"/);
+});
+
+test("keeps Monday-Sunday results separate from the inherited Monday-Friday plan", async () => {
   const [operations, operationsModel, styles, weeklyExport, weeklyApi, quotationExport] = await Promise.all([
     readFile(new URL("../app/operations-views.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/operations.ts", import.meta.url), "utf8"),
@@ -355,16 +453,25 @@ test("keeps current-week results separate from the following-week plan", async (
   assert.match(operations, /WEEKLY PLANNER · TUẦN KẾ TIẾP/);
   assert.match(operations, /addDays\(planWeek\.weekStart, index\)/);
   assert.match(operations, /Kết quả công việc tuần/);
+  assert.match(operations, /THỨ HAI–CHỦ NHẬT/);
+  assert.match(operations, /2 · CHỦ NHẬT/);
+  assert.match(operations, /Đã giữ nội dung từ báo cáo/);
   assert.match(operations, /Quy tắc lấy dữ liệu/);
   assert.match(operations, /includeInWeeklyReport/);
   assert.match(operations, /dateInRange\(activity\.activityDate, report\.weekStart, report\.weekEnd\)/);
   assert.match(operationsModel, /export function nextWeekBounds/);
+  assert.match(operationsModel, /sunday\.setDate\(monday\.getDate\(\) \+ 6\)/);
+  assert.match(operationsModel, /friday\.setDate\(monday\.getDate\(\) \+ 4\)/);
+  assert.match(operationsModel, /export function previousWeekBounds/);
   assert.match(styles, /\.weekly-plan-grid \{ display: grid; grid-template-columns: 1fr/);
   assert.match(styles, /grid-template-columns: 150px minmax\(260px, 1\.25fr\) minmax\(300px, \.85fr\)/);
   assert.match(weeklyExport, /report\.plan\.slice\(0, 5\)\.forEach/);
   assert.match(weeklyExport, /companyWeekNumber\(planWeek\.weekStart\)/);
   assert.match(weeklyExport, /Main Activity · Plan/);
-  assert.match(weeklyApi, /correctLegacyWeekNumber/);
+  assert.match(weeklyApi, /correctLegacyReport/);
+  assert.match(weeklyApi, /planInheritedFrom/);
+  assert.match(weeklyApi, /inheritPlan\(empty\.plan, previousPlan\)/);
+  assert.match(weeklyExport, /const weekdays = \["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"\]/);
   assert.match(quotationExport, /fitToWidth="1" fitToHeight="1"/);
   assert.match(quotationExport, /quotationRowHeight/);
 });
@@ -476,7 +583,7 @@ test("ships the guarded AI campaign center for phase four", async () => {
   assert.match(worker, /env\.MAIL_CREDENTIAL_KEY/);
   assert.match(automation, /credentialKeyOverride/);
   assert.match(vite, /ai: \{ binding: "AI" \}/);
-  assert.match(vite, /crons: \["\*\/15 \* \* \* \*"\]/);
+  assert.match(vite, /crons: \["\*\/15 \* \* \* \*", DAILY_BACKUP_CRON\]/);
 });
 
 test("ships six industry mail libraries with four-step Lead automation", async () => {
