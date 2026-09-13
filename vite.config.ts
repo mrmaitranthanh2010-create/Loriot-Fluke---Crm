@@ -4,6 +4,7 @@ import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
 
 const CLOUDFLARE_D1_DATABASE_ID = "7bba13b8-59ff-49c0-851e-744843612ded";
+const DAILY_BACKUP_CRON = "20 18 * * *";
 
 const { d1, r2 } = hostingConfig;
 
@@ -14,10 +15,11 @@ const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_date: "2026-08-27",
   compatibility_flags: ["nodejs_compat"],
+  keep_vars: true,
   assets: { binding: "ASSETS" },
   ai: { binding: "AI" },
-  triggers: { crons: ["*/15 * * * *"] },
-  vars: { CRM_AUTH_USERNAME: "maithanh" },
+  observability: { enabled: true, logs: { head_sampling_rate: 1 } },
+  triggers: { crons: ["*/15 * * * *", DAILY_BACKUP_CRON] },
   d1_databases: d1
     ? [
         {

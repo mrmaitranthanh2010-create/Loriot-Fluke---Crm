@@ -1,5 +1,6 @@
 import handler from "vinext/server/app-router-entry";
 import { routeAgentRequest } from "agents";
+import { createD1Backup, LATEST_BACKUP_KEY } from "@/lib/data-backup";
 import { LoriotSalesAgent } from "./sales-agent";
 
 export { LoriotSalesAgent };
@@ -11,13 +12,16 @@ interface Env extends HandlerEnv {
   CRM_AUTH_USERNAME?: string;
   CRM_AUTH_PASSWORD?: string;
   MAIL_CREDENTIAL_KEY?: string;
+  DB: D1Database;
+  EMAIL_FILES: R2Bucket;
 }
 
-type ScheduledEvent = { cron: string };
+type ScheduledEvent = { cron: string; scheduledTime: number };
 
 const SESSION_COOKIE = "loriot_crm_session";
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 const MAX_LOGIN_BODY_BYTES = 4_096;
+const DAILY_BACKUP_CRON = "20 18 * * *";
 const encoder = new TextEncoder();
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -196,6 +200,37 @@ function unauthorizedApi(): Response {
   );
 }
 
+async function healthResponse(env: Env): Promise<Response> {
+  try {
+    const databaseCheck = await env.DB.prepare("SELECT 1 AS healthy").first<{ healthy: number }>();
+    if (databaseCheck?.healthy !== 1) throw new Error("database check failed");
+    const latestBackup = await env.EMAIL_FILES.head(LATEST_BACKUP_KEY);
+    return Response.json({
+      status: "ok",
+      database: "ok",
+      backup: latestBackup ? "ok" : "pending",
+      lastBackupAt: latestBackup?.customMetadata?.completedAt || null,
+      checkedAt: new Date().toISOString(),
+    }, {
+      status: 200,
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-Robots-Tag": "noindex, nofollow",
+      },
+    });
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: "CRM health check failed",
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return Response.json({ status: "unavailable", checkedAt: new Date().toISOString() }, {
+      status: 503,
+      headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+    });
+  }
+}
+
 async function readLoginBody(request: Request): Promise<string | null> {
   if (!request.body) return "";
   const reader = request.body.getReader();
@@ -279,16 +314,18 @@ const worker = {
     // outside Basic Auth lets the browser finish loading after the HTML login.
     if (isPublicStaticAsset(request)) return handler.fetch(request, env, ctx);
 
-    const username = env.CRM_AUTH_USERNAME?.trim() || "mai";
+    const url = new URL(request.url);
+    if (url.pathname === "/__health" && request.method === "GET") return healthResponse(env);
+
+    const username = env.CRM_AUTH_USERNAME?.trim();
     const password = env.CRM_AUTH_PASSWORD;
-    if (!password) {
-      return new Response("CRM đang chờ cấu hình mật khẩu bảo mật.", {
+    if (!username || !password) {
+      return new Response("CRM đang chờ cấu hình tài khoản bảo mật.", {
         status: 503,
         headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
       });
     }
 
-    const url = new URL(request.url);
     if (url.pathname === "/__auth/login" && request.method === "GET") return loginPage();
     if (url.pathname === "/__auth/login" && request.method === "POST") {
       return handleLogin(request, username, password);
@@ -316,6 +353,21 @@ const worker = {
     return handler.fetch(request, env, ctx);
   },
   async scheduled(controller: ScheduledEvent, env: Env): Promise<void> {
+    if (controller.cron === DAILY_BACKUP_CRON) {
+      try {
+        const result = await createD1Backup(env.DB, env.EMAIL_FILES, controller.scheduledTime);
+        console.log(JSON.stringify({ message: "daily D1 backup completed", ...result }));
+      } catch (error) {
+        console.error(JSON.stringify({
+          message: "daily D1 backup failed",
+          cron: controller.cron,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        throw error;
+      }
+      return;
+    }
+
     try {
       const [{ ensureDatabase }, { runEmailAutomation }] = await Promise.all([
         import("@/db"),
