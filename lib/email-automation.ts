@@ -111,7 +111,7 @@ type ReplyAnalysis = {
   source: "AI" | "Rules";
 };
 
-const AI_MODEL = "@cf/google/gemma-3-12b-it";
+const AI_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 const CLASSIFICATIONS: EmailReplyClassification[] = [
   "Có nhu cầu",
   "Yêu cầu báo giá",

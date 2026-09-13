@@ -60,7 +60,7 @@ type QuoteContext = {
   quoteDate: string;
 };
 
-const SALES_AI_MODEL = "@cf/google/gemma-3-12b-it";
+const SALES_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 const MAX_MESSAGE_LENGTH = 1_800;
 const MAX_STATE_MESSAGES = 18;
 
